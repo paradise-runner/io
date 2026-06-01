@@ -104,4 +104,14 @@ var (
 	signalOffStyle    = lipgloss.NewStyle().Foreground(colorInk)
 	batteryStyle      = lipgloss.NewStyle().Foreground(colorDim)
 	clockStyle        = lipgloss.NewStyle().Foreground(colorDim)
+
+	sideButtonFrameStyle  = lipgloss.NewStyle().Foreground(colorLavender).Bold(true)
+	sideButtonFaceStyle   = lipgloss.NewStyle().Foreground(colorInk).Background(colorPink).Bold(true)
+	sideButtonShadowStyle = lipgloss.NewStyle().
+				Foreground(colorInk)
+
+	takeoverFrameStyle  = lipgloss.NewStyle().Foreground(colorPink).Bold(true)
+	takeoverTitleStyle  = lipgloss.NewStyle().Foreground(colorMint).Bold(true)
+	takeoverBodyStyle   = lipgloss.NewStyle().Foreground(colorCream)
+	takeoverSignalStyle = lipgloss.NewStyle().Foreground(colorLavender).Bold(true)
 )

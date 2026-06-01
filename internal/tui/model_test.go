@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/edward-champion/io/internal/claudeproc"
@@ -74,6 +75,86 @@ func TestUpdate_HotkeyOpensSettings(t *testing.T) {
 	}
 	if !strings.Contains(mm.View(), "SETTINGS") {
 		t.Fatalf("settings screen missing title:\n%s", mm.View())
+	}
+}
+
+func TestUpdate_SideButtonTriggersTakeover(t *testing.T) {
+	m := newTestModel(&stubApp{})
+	if m.sideW == 0 || m.sideH == 0 {
+		t.Fatal("side button should be visible at test terminal size")
+	}
+
+	updated, _ := m.Update(tea.MouseMsg{
+		X:      m.sideX,
+		Y:      m.sideY + 1,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	})
+	mm := updated.(Model)
+
+	if !mm.sideButtonPressed() {
+		t.Fatal("side button should render pressed immediately after click")
+	}
+	if !mm.takeoverActive() {
+		t.Fatal("side button click should start the LCD takeover")
+	}
+	if !strings.Contains(mm.View(), "IO-LINK OVERRIDE") {
+		t.Fatalf("takeover view missing easter egg copy:\n%s", mm.View())
+	}
+}
+
+func TestUpdate_SideButtonTogglesTakeoverOff(t *testing.T) {
+	m := newTestModel(&stubApp{})
+	click := tea.MouseMsg{
+		X:      m.sideX,
+		Y:      m.sideY + 1,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	}
+
+	updated, _ := m.Update(click)
+	m = updated.(Model)
+	if !m.takeoverActive() {
+		t.Fatal("first side button click should start takeover")
+	}
+
+	updated, _ = m.Update(click)
+	m = updated.(Model)
+	if m.takeoverActive() {
+		t.Fatal("second side button click should deactivate takeover")
+	}
+	if !m.sideButtonPressed() {
+		t.Fatal("second click should still animate the physical button press")
+	}
+	if strings.Contains(m.View(), "IO-LINK OVERRIDE") {
+		t.Fatalf("takeover view should be gone after second click:\n%s", m.View())
+	}
+}
+
+func TestSideButtonHitTest(t *testing.T) {
+	m := newTestModel(&stubApp{})
+	if !m.sideButtonHit(m.sideX, m.sideY) {
+		t.Fatal("top-left side button cell should hit")
+	}
+	if !m.sideButtonHit(m.sideX+m.sideW-1, m.sideY+m.sideH-1) {
+		t.Fatal("bottom-right side button cell should hit")
+	}
+	if m.sideButtonHit(m.sideX-1, m.sideY) {
+		t.Fatal("cell left of side button should miss")
+	}
+	if m.sideButtonHit(m.sideX, m.sideY+m.sideH) {
+		t.Fatal("cell below side button should miss")
+	}
+}
+
+func TestTakeoverExpires(t *testing.T) {
+	m := newTestModel(&stubApp{})
+	m.takeoverUntil = time.Now().Add(-time.Millisecond)
+	if m.takeoverActive() {
+		t.Fatal("expired takeover should be inactive")
+	}
+	if strings.Contains(m.activeScreen(), "IO-LINK OVERRIDE") {
+		t.Fatalf("expired takeover should return to active screen:\n%s", m.activeScreen())
 	}
 }
 

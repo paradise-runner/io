@@ -147,6 +147,38 @@ func TestHardwareChrome_AddsReadableDeviceDetails(t *testing.T) {
 	}
 }
 
+func TestSideButton_AttachesAndAnimatesPress(t *testing.T) {
+	device := deviceTop(40) + "\n" + strings.Repeat("│"+strings.Repeat(" ", 38)+"│\n", 10)
+	released := attachSideButton(device, 40, sideButtonWidth, false)
+	pressed := attachSideButton(device, 40, sideButtonWidth, true)
+
+	if released == pressed {
+		t.Fatal("pressed side button should render differently")
+	}
+	if !strings.Contains(released, "◆") || !strings.Contains(pressed, "◆") {
+		t.Fatalf("side button should include its button face:\nreleased:\n%s\npressed:\n%s", released, pressed)
+	}
+	for _, line := range strings.Split(released, "\n") {
+		if w := lipgloss.Width(line); w != 40+sideButtonWidth {
+			t.Fatalf("released line width = %d, want %d: %q", w, 40+sideButtonWidth, line)
+		}
+	}
+}
+
+func TestTakeoverScreen_FillsBounds(t *testing.T) {
+	for _, dim := range [][2]int{{20, 6}, {72, 18}} {
+		out := takeoverScreen(dim[0], dim[1], 2)
+		if h := lipgloss.Height(out); h != dim[1] {
+			t.Fatalf("takeover height = %d, want %d:\n%s", h, dim[1], out)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if w := lipgloss.Width(line); w != dim[0] {
+				t.Fatalf("takeover line width = %d, want %d: %q", w, dim[0], line)
+			}
+		}
+	}
+}
+
 func TestStatusLine_WorkingAnimates(t *testing.T) {
 	m := newTestModel(&stubApp{})
 	m.working = true

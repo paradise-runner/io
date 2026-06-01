@@ -23,6 +23,10 @@ const (
 	// mastCol is the column (relative to the frame's left edge) where the
 	// antenna mast meets the top border.
 	mastCol = 6
+
+	sideButtonWidth  = 6
+	sideButtonHeight = 4
+	sideButtonTopRel = antennaHeight + 1 + grilleHeight + 2
 )
 
 // deviceTop renders the antenna and the frame's top border. The top border is
@@ -47,6 +51,80 @@ func deviceTop(frameW int) string {
 	border := antennaMastStyle.Render(b.String())
 
 	return waves + "\n" + mast + "\n" + border
+}
+
+func attachSideButton(device string, frameW, sideW int, pressed bool) string {
+	if sideW < 1 {
+		return device
+	}
+	button := sideButtonLines(pressed, sideW)
+	lines := strings.Split(device, "\n")
+	for i := range lines {
+		lines[i] = padVisible(lines[i], frameW)
+		side := strings.Repeat(" ", sideW)
+		if j := i - sideButtonTopRel; j >= 0 && j < len(button) {
+			side = button[j]
+		}
+		lines[i] += side
+	}
+	return strings.Join(lines, "\n")
+}
+
+func sideButtonLines(pressed bool, w int) []string {
+	if w < 1 {
+		return nil
+	}
+	if w < 5 {
+		lines := []string{
+			sideButtonFrameStyle.Render("▐"),
+			sideButtonFaceStyle.Render("◆"),
+			sideButtonFrameStyle.Render("▟"),
+			"",
+		}
+		if pressed {
+			lines = []string{
+				"",
+				sideButtonFrameStyle.Render("▐"),
+				sideButtonFaceStyle.Render("◆"),
+				sideButtonFrameStyle.Render("▟"),
+			}
+		}
+		for i := range lines {
+			lines[i] = padVisible(lines[i], w)
+		}
+		return lines
+	}
+	released := []string{
+		sideButtonFrameStyle.Render("╭──╮ "),
+		sideButtonFrameStyle.Render("│") + sideButtonFaceStyle.Render("◆") + sideButtonFrameStyle.Render(" │") + sideButtonShadowStyle.Render("▏"),
+		sideButtonFrameStyle.Render("╰──╯") + sideButtonShadowStyle.Render("▔"),
+		"",
+	}
+	if pressed {
+		released = []string{
+			"",
+			sideButtonFrameStyle.Render("╭──╮ "),
+			sideButtonFrameStyle.Render("│") + sideButtonFaceStyle.Render("◆") + sideButtonFrameStyle.Render(" │"),
+			sideButtonFrameStyle.Render("╰──╯ "),
+		}
+	}
+	for i := range released {
+		released[i] = padVisible(released[i], w)
+		if lipgloss.Width(released[i]) > w {
+			released[i] = lipgloss.NewStyle().Inline(true).MaxWidth(w).Render(released[i])
+		}
+	}
+	return released
+}
+
+func padVisible(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	if width := lipgloss.Width(s); width < w {
+		return s + strings.Repeat(" ", w-width)
+	}
+	return s
 }
 
 // screenHeader renders the LCD readout that runs along the top of the active
@@ -107,7 +185,10 @@ func (m Model) statusLine(w int) string {
 
 	led := ledOnlineStyle.Render("●")
 	word := "ready"
-	if m.working {
+	if m.takeoverActive() {
+		led = ledWorkingStyle.Render(pulseGlyph(m.frame))
+		word = "override"
+	} else if m.working {
 		led = ledWorkingStyle.Render(pulseGlyph(m.frame))
 		word = "thinking"
 	} else if m.screen != screenMessages {

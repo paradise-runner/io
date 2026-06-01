@@ -96,11 +96,13 @@ type Model struct {
 	setup    setupFlow
 	active   controlScreen // nil unless a control screen is open
 
-	expr       Expression
-	frame      int
-	working    bool
-	happyTill  time.Time
-	lastScroll time.Time // last mouse/scroll activity, for mouse-noise gating
+	expr          Expression
+	frame         int
+	working       bool
+	happyTill     time.Time
+	lastScroll    time.Time // last mouse/scroll activity, for mouse-noise gating
+	sideDownUntil time.Time
+	takeoverUntil time.Time
 
 	ctx ContextInfo
 
@@ -111,6 +113,8 @@ type Model struct {
 	contentLeft          int // absolute x of the frame interior (for mouse hit-test)
 	barX                 int // absolute x of the toolbar's left edge (inside the tray)
 	barY                 int // absolute y of the button bar row
+	sideX, sideY         int // absolute top-left of the external side button
+	sideW, sideH         int
 	ready                bool
 	screen               screenKind
 }
@@ -164,6 +168,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	if mouse, ok := msg.(tea.MouseMsg); ok {
+		m.lastScroll = time.Now()
+		if mouse.Action == tea.MouseActionPress && mouse.Button == tea.MouseButtonLeft && m.sideButtonHit(mouse.X, mouse.Y) {
+			m.pressSideButton(time.Now())
+			return m, nil
+		}
+	}
+
+	if m.takeoverActive() {
+		return m, nil
+	}
+
 	if m.screen != screenMessages {
 		if m.screen == screenSetupHarness || m.screen == screenSetupPersonality {
 			return m.updateSetup(msg)
@@ -173,8 +189,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.MouseMsg:
-		// Note the activity so leaked report fragments can be filtered (#4).
-		m.lastScroll = time.Now()
 		// Left-click on the button bar opens a communicator screen.
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft && msg.Y == m.barY {
 			if action, ok := m.messages.BarHitTest(msg.X - m.barX); ok {
@@ -274,7 +288,11 @@ func (m Model) updateSetup(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) layout(w, h int) {
 	m.termW, m.termH = w, h
 
+	sideW := sideButtonReserve(w)
 	frameW := w
+	if sideW > 0 {
+		frameW -= sideW
+	}
 	if frameW > maxFrameWidth {
 		frameW = maxFrameWidth
 	}
@@ -290,6 +308,7 @@ func (m *Model) layout(w, h int) {
 	if interiorW < 10 {
 		interiorW = 10
 	}
+	frameW = interiorW + 4
 	interiorH := frameH - 2
 	minInteriorH := grilleHeight + screenBorder + screenChromeHeight + trayHeight + 1
 	if interiorH < minInteriorH {
@@ -317,7 +336,8 @@ func (m *Model) layout(w, h int) {
 	}
 	m.ready = true
 
-	leftMargin := (w - frameW) / 2
+	totalW := frameW + sideW
+	leftMargin := (w - totalW) / 2
 	if leftMargin < 0 {
 		leftMargin = 0
 	}
@@ -337,6 +357,23 @@ func (m *Model) layout(w, h int) {
 	const screenTopBorder = 1
 	const trayTopBorder = 1
 	m.barY = topMargin + antennaHeight + 1 + grilleHeight + screenTopBorder + screenChromeHeight + m.messages.ViewportHeight() + trayTopBorder + inputHeight + dividerHeight
+	m.sideX, m.sideY = leftMargin+frameW, topMargin+sideButtonTopRel
+	m.sideW, m.sideH = sideW, sideButtonHeight
+}
+
+func sideButtonReserve(termW int) int {
+	if termW < 20 {
+		return 0
+	}
+	minFrameW := lipgloss.Width((Bar{}).View()) + 12
+	spare := termW - minFrameW
+	if spare < 1 {
+		return 0
+	}
+	if spare > sideButtonWidth {
+		return sideButtonWidth
+	}
+	return spare
 }
 
 func (m *Model) tickExpression() {
@@ -351,6 +388,34 @@ func (m *Model) tickExpression() {
 		m.expr = Resting
 	}
 }
+
+func (m Model) sideButtonHit(x, y int) bool {
+	if m.sideW < 1 || m.sideH < 1 {
+		return false
+	}
+	return x >= m.sideX && x < m.sideX+m.sideW && y >= m.sideY && y < m.sideY+m.sideH
+}
+
+func (m *Model) pressSideButton(now time.Time) {
+	m.sideDownUntil = now.Add(650 * time.Millisecond)
+	if now.Before(m.takeoverUntil) {
+		m.takeoverUntil = time.Time{}
+		if m.working {
+			m.expr = Working
+		} else if now.Before(m.happyTill) {
+			m.expr = Happy
+		} else {
+			m.expr = Resting
+		}
+		return
+	}
+	m.takeoverUntil = now.Add(3500 * time.Millisecond)
+	m.expr = Working
+}
+
+func (m Model) sideButtonPressed() bool { return time.Now().Before(m.sideDownUntil) }
+
+func (m Model) takeoverActive() bool { return time.Now().Before(m.takeoverUntil) }
 
 func (m Model) handleEvent(ev claudeproc.Event) Model {
 	switch ev.Kind {
@@ -408,6 +473,9 @@ func (m *Model) refreshMessages() { m.messages.Refresh() }
 // activeScreen renders the replaceable body inside the screen shell. Additional
 // screens should branch here while leaving the device and screen chrome intact.
 func (m Model) activeScreen() string {
+	if m.takeoverActive() {
+		return takeoverScreen(m.screenW, m.screenBodyHeight(), m.frame)
+	}
 	switch m.screen {
 	case screenSetupHarness, screenSetupPersonality:
 		return m.setup.View(m.screen, m.screenW, m.screenBodyHeight(), m.frame)
@@ -465,6 +533,7 @@ func (m Model) View() string {
 		Render(inner)
 	frameW := m.interiorW + 4
 	device := deviceTop(frameW) + "\n" + framed
+	device = attachSideButton(device, frameW, m.sideW, m.sideButtonPressed())
 	base := lipgloss.Place(m.termW, m.termH, lipgloss.Center, lipgloss.Center, device)
 
 	return base
