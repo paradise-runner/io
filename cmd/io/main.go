@@ -13,6 +13,8 @@ import (
 	"github.com/edward-champion/io/internal/tui"
 )
 
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "io:", err)
@@ -27,6 +29,10 @@ func run() error {
 	opts, err := parseFlags(os.Args[1:])
 	if err != nil {
 		return err
+	}
+	if opts.showVersion {
+		fmt.Println(version)
+		return nil
 	}
 	root, err := personastate.DefaultRoot()
 	if err != nil {
@@ -58,11 +64,12 @@ func run() error {
 }
 
 type cliOptions struct {
-	harness    string
-	model      string
-	effort     string
-	claudePath string
-	codexPath  string
+	harness     string
+	model       string
+	effort      string
+	claudePath  string
+	codexPath   string
+	showVersion bool
 }
 
 func parseFlags(args []string) (cliOptions, error) {
@@ -77,6 +84,7 @@ func parseFlags(args []string) (cliOptions, error) {
 	fs.StringVar(&opts.effort, "agent-effort", "", "reasoning effort: low, medium, or high")
 	fs.StringVar(&opts.claudePath, "claude-path", "", "path to the claude binary")
 	fs.StringVar(&opts.codexPath, "codex-path", "", "path to the codex binary")
+	fs.BoolVar(&opts.showVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return opts, err
 	}

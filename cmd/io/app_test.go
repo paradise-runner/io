@@ -30,6 +30,16 @@ func TestNewApp_MissingSoulDefersPersonaStart(t *testing.T) {
 	}
 }
 
+func TestParseFlagsVersion(t *testing.T) {
+	opts, err := parseFlags([]string{"--version"})
+	if err != nil {
+		t.Fatalf("parseFlags error: %v", err)
+	}
+	if !opts.showVersion {
+		t.Fatal("showVersion = false, want true")
+	}
+}
+
 func TestNewAppWritesMCPConfig(t *testing.T) {
 	root := t.TempDir()
 	a, err := newApp(root, personastate.State{}, runtimeConfig{})
