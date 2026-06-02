@@ -37,15 +37,17 @@ func (demoApp) SaveSettings(personastate.State) error { return nil }
 func (demoApp) ContextInfo() tui.ContextInfo {
 	return tui.ContextInfo{InputTokens: 18234, ContextWindow: 200000, CostUSD: 0.42}
 }
-func (demoApp) CompactNow() error              { return nil }
-func (demoApp) MemorySummary() (string, error) { return "# Memory Index\n\n- io project — TUI", nil }
+func (demoApp) CompactNow() error { return nil }
+func (demoApp) MemorySummary() (string, error) {
+	return "# Memory Index\n\n- demo workspace - project notes", nil
+}
 func (demoApp) History() []tui.HistoryEntry {
 	return []tui.HistoryEntry{
-		{Role: tui.RoleYou, Text: "hey io, what's on my plate today?"},
-		{Role: tui.RoleIO, Text: "Morning! Here's your **In Progress / Review** board:\n\n| Key | Project | Summary |\n|-----|---------|---------|\n| ACE-268 | ACE | Implement label gating + preview environments for enablement-data-portal |\n| ACE-201 | ACE | Wire up the nightly backfill |"},
+		{Role: tui.RoleYou, Text: "hey io, what should I focus on today?"},
+		{Role: tui.RoleIO, Text: "Morning! Here's your **Focus / Review** board:\n\n| Key | Area | Summary |\n|-----|------|---------|\n| DEMO-101 | Product | Polish the onboarding copy |\n| DEMO-102 | Docs | Refresh the quickstart screenshot |"},
 		{Role: tui.RoleIO, Text: "**Backlog / Refine**"},
-		{Role: tui.RoleIO, Text: "| Key | Project | Summary |\n|-----|---------|---------|\n| ACE-274 | ACE | okta-datalake-pipeline: gold_transform.py — current-state engineering domain gold table |\n| ACE-118 | ACE | Python Packages Paved Road *(Epic)* |\n| RARE-403 | RARE | Kubernetes Evaluation *(High priority)* |\n| RARE-393 | RARE | Implement DD Only Monitor Zone |\n| CLDE-89 | CLDE | Transform service to be a github app |"},
-		{Role: tui.RoleIO, Text: "You've got 4 tickets actively in-flight (Development/Review). `RARE-403` is the only High priority item sitting in Backlog — may be worth a look."},
+		{Role: tui.RoleIO, Text: "| Key | Area | Summary |\n|-----|------|---------|\n| DEMO-203 | App | Add saved workspace shortcuts |\n| DEMO-214 | Ops | Review nightly cleanup logs |\n| DEMO-225 | Docs | Draft release notes |\n| DEMO-231 | Support | Triage feedback from beta users |\n| DEMO-240 | Research | Compare reminder workflows |"},
+		{Role: tui.RoleIO, Text: "You've got 2 active items and 5 queued follow-ups. `DEMO-203` is the best next backlog item because it unblocks the settings pass."},
 	}
 }
 
