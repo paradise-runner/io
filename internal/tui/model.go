@@ -576,3 +576,16 @@ func (m Model) View() string {
 
 	return base
 }
+
+// ScreenshotView renders a deterministic, non-interactive view for documentation
+// screenshots. It keeps the normal chat screen focused in the app, but hides the
+// textarea cursor so generated assets do not depend on blink state.
+func (m Model) ScreenshotView(width, height int) string {
+	rendered, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: height})
+	next, ok := rendered.(Model)
+	if !ok {
+		return rendered.View()
+	}
+	next.messages.input.Blur()
+	return next.View()
+}

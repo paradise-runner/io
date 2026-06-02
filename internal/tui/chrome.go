@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -209,11 +210,18 @@ func (m Model) statusLine(w int) string {
 	right := strings.Join([]string{
 		m.activityMeter(),
 		batteryStyle.Render("▰ 95%"),
-		clockStyle.Render(time.Now().Format("15:04")),
+		clockStyle.Render(clockText()),
 	}, sep)
 
 	middle := strings.Join(m.statusReadouts(), sep)
 	return statusLineFit(w, left, middle, right)
+}
+
+func clockText() string {
+	if fixed := strings.TrimSpace(os.Getenv("IO_TUI_CLOCK")); fixed != "" {
+		return fixed
+	}
+	return time.Now().Format("15:04")
 }
 
 func (m Model) statusFace() string {

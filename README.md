@@ -109,6 +109,23 @@ Run the normal test suite:
 go test ./...
 ```
 
+Regenerate the checked-in screenshot used by the README and landing page:
+
+```sh
+go run ./cmd/ioscreenshot io-example.png
+```
+
+The screenshot generator requires macOS with Ghostty, tmux, clang, and
+`screencapture`. Ghostty must be allowed in System Settings > Privacy &
+Security > Screen & System Audio Recording.
+
+Install the `prek` pre-push hook that regenerates `io-example.png` before each
+push and stops the push when the committed PNG is stale:
+
+```sh
+prek install --hook-type pre-push
+```
+
 Run the real-Claude smoke test when `claude` is installed and authenticated:
 
 ```sh
@@ -124,6 +141,7 @@ Most harness-facing tests use fake Claude and Codex binaries from
 | --- | --- |
 | `cmd/io` | Main `io` application entrypoint and TUI controller adapter. |
 | `cmd/iodemo` | Offline canned-data TUI demo. |
+| `cmd/ioscreenshot` | Ghostty/tmux screenshot generator for `io-example.png`. |
 | `internal/agentharness` | Harness choices, model defaults, and normalization. |
 | `internal/claudeproc` | Parser and input encoder for Claude stream-json. |
 | `internal/codexproc` | Parser for Codex JSONL output. |
