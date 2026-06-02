@@ -11,6 +11,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		PersonaSessionID:    "sess-1",
 		CompactionThreshold: 0.75,
 		DreamChatThreshold:  7,
+		LastDreamAt:         "2026-06-02T10:00:00Z",
+		ChatsSinceDream:     3,
+		DreamerModel:        "opus",
 	}
 	if err := Save(dir, s); err != nil {
 		t.Fatalf("Save error: %v", err)
@@ -37,6 +40,15 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.DreamChatThreshold != 7 {
 		t.Fatalf("DreamChatThreshold = %v, want 7", got.DreamChatThreshold)
 	}
+	if got.LastDreamAt != "2026-06-02T10:00:00Z" {
+		t.Fatalf("LastDreamAt = %q, want saved timestamp", got.LastDreamAt)
+	}
+	if got.ChatsSinceDream != 3 {
+		t.Fatalf("ChatsSinceDream = %d, want 3", got.ChatsSinceDream)
+	}
+	if got.DreamerModel != "opus" {
+		t.Fatalf("DreamerModel = %q, want opus", got.DreamerModel)
+	}
 }
 
 func TestLoad_MissingReturnsDefaults(t *testing.T) {
@@ -62,6 +74,9 @@ func TestLoad_MissingReturnsDefaults(t *testing.T) {
 	}
 	if got.DreamChatThreshold != DefaultDreamChatThreshold {
 		t.Fatalf("DreamChatThreshold = %v, want default %v", got.DreamChatThreshold, DefaultDreamChatThreshold)
+	}
+	if got.DreamerModel != DefaultModel {
+		t.Fatalf("DreamerModel = %q, want default %q", got.DreamerModel, DefaultModel)
 	}
 }
 

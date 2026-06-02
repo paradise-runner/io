@@ -112,6 +112,25 @@ func TestPersona_SendReturnsAssistantText(t *testing.T) {
 	}
 }
 
+func TestPersona_SendCommandUsesClaudeStream(t *testing.T) {
+	fake := buildFakeClaude(t)
+	p, err := New(Config{ClaudePath: fake})
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+	defer p.Close()
+
+	waitFor(t, p.Events(), claudeproc.KindInit)
+
+	if err := p.SendCommand("/compact"); err != nil {
+		t.Fatalf("SendCommand error: %v", err)
+	}
+	got := waitFor(t, p.Events(), claudeproc.KindAssistantText)
+	if got.Text != "echo: /compact" {
+		t.Fatalf("assistant Text = %q, want %q", got.Text, "echo: /compact")
+	}
+}
+
 func TestPersona_CodexDefaultsModelAndEffort(t *testing.T) {
 	fake := buildFakeCodex(t)
 	p, err := New(Config{Harness: "codex", CodexPath: fake})
@@ -148,5 +167,18 @@ func TestPersona_CodexResumePassesSessionID(t *testing.T) {
 	init := waitFor(t, p.Events(), claudeproc.KindInit)
 	if init.SessionID != "prior-codex" {
 		t.Fatalf("codex resumed SessionID = %q, want prior-codex", init.SessionID)
+	}
+}
+
+func TestPersona_CodexSendCommandUnsupported(t *testing.T) {
+	fake := buildFakeCodex(t)
+	p, err := New(Config{Harness: "codex", CodexPath: fake})
+	if err != nil {
+		t.Fatalf("New error: %v", err)
+	}
+	defer p.Close()
+
+	if err := p.SendCommand("/compact"); err == nil {
+		t.Fatal("SendCommand should fail for codex")
 	}
 }

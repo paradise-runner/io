@@ -32,6 +32,9 @@ type State struct {
 	ReasoningEffort     string  `json:"reasoning_effort"`
 	CompactionThreshold float64 `json:"compaction_threshold"`
 	DreamChatThreshold  int     `json:"dream_chat_threshold"`
+	LastDreamAt         string  `json:"last_dream_at,omitempty"`
+	ChatsSinceDream     int     `json:"chats_since_dream,omitempty"`
+	DreamerModel        string  `json:"dreamer_model,omitempty"`
 }
 
 // DefaultRoot returns the default io root directory (~/.io).
@@ -121,6 +124,10 @@ func (s *State) Normalize() {
 	if s.DreamChatThreshold == 0 {
 		s.DreamChatThreshold = DefaultDreamChatThreshold
 	}
+	if s.DreamerModel == "" {
+		s.DreamerModel = s.ActiveModel()
+	}
+	s.DreamerModel = agentharness.NormalizeModel(s.Harness, s.DreamerModel)
 }
 
 // Save writes state.json to root, creating root (0700) if needed. It writes to

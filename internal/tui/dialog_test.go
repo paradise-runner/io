@@ -69,10 +69,22 @@ func TestSettingsScreen_ThresholdClamps(t *testing.T) {
 	}
 }
 
+func TestSettingsScreen_DreamThresholdSaves(t *testing.T) {
+	app := &stubApp{settings: personastate.State{Model: "sonnet", CompactionThreshold: 0.75, DreamChatThreshold: 7}}
+	d := newSettingsScreen(app)
+	d.field = 2
+
+	d.Update(tea.KeyMsg{Type: tea.KeyRight})
+	d.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if app.saved == nil || app.saved.DreamChatThreshold != 8 {
+		t.Fatalf("DreamChatThreshold = %+v, want 8", app.saved)
+	}
+}
+
 func TestSettingsScreen_HarnessSetsHarnessDefaultModel(t *testing.T) {
 	app := &stubApp{settings: personastate.State{Model: "sonnet", CompactionThreshold: 0.75}}
 	d := newSettingsScreen(app)
-	d.field = 2
+	d.field = 3
 
 	d.Update(tea.KeyMsg{Type: tea.KeyRight})
 	if d.harness != "codex" {

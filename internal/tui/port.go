@@ -10,6 +10,8 @@ type ContextInfo struct {
 	InputTokens   int
 	ContextWindow int
 	CostUSD       float64
+	Compaction    string
+	Dreaming      string
 }
 
 // HistoryEntry is one prior message loaded at startup.
@@ -38,6 +40,8 @@ type AppController interface {
 	SaveSettings(personastate.State) error
 	// ContextInfo returns the last-observed usage + cost.
 	ContextInfo() ContextInfo
+	// CompactNow requests immediate context compaction when the harness supports it.
+	CompactNow() error
 	// MemorySummary returns io's memory index contents (or a friendly empty state).
 	MemorySummary() (string, error)
 	// History returns the prior conversation to repopulate on startup.

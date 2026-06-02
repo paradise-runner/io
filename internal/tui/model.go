@@ -17,8 +17,9 @@ const (
 	trayBorder    = 2 // the compose tray's top + bottom rounded-border rows
 	// trayHeight is the full vertical footprint of the compose tray inside the
 	// active screen: border + input + divider + toolbar.
-	trayHeight = trayBorder + inputHeight + dividerHeight + barHeight
-	happyFor   = 2 * time.Second
+	trayHeight  = trayBorder + inputHeight + dividerHeight + barHeight
+	happyFor    = 2 * time.Second
+	sleepyAfter = 45 * time.Second
 
 	// The device frame is capped so it reads as a handheld "pocket communicator"
 	// rather than filling the whole terminal.
@@ -96,15 +97,19 @@ type Model struct {
 	setup    setupFlow
 	active   controlScreen // nil unless a control screen is open
 
-	expr          Expression
-	frame         int
-	working       bool
-	happyTill     time.Time
-	lastScroll    time.Time // last mouse/scroll activity, for mouse-noise gating
-	sideDownUntil time.Time
-	takeoverUntil time.Time
+	expr           Expression
+	frame          int
+	working        bool
+	happyTill      time.Time
+	lastActivityAt time.Time
+	lastScroll     time.Time // last mouse/scroll activity, for mouse-noise gating
+	sideDownUntil  time.Time
+	takeoverUntil  time.Time
 
 	ctx ContextInfo
+
+	workerStatuses map[string]WorkerStatusEntry
+	workerOrder    []string
 
 	// Layout geometry (recomputed on resize).
 	termW, termH         int
@@ -121,12 +126,15 @@ type Model struct {
 
 // New constructs a Model wired to an AppController.
 func New(app AppController) Model {
+	now := time.Now()
 	m := Model{
-		app:      app,
-		messages: newMessageComponent(app.History()),
-		setup:    newSetupFlow(app.Settings()),
-		expr:     Resting,
-		screen:   screenMessages,
+		app:            app,
+		messages:       newMessageComponent(app.History()),
+		setup:          newSetupFlow(app.Settings()),
+		expr:           Resting,
+		lastActivityAt: now,
+		workerStatuses: make(map[string]WorkerStatusEntry),
+		screen:         screenMessages,
 	}
 	if app.NeedsSetup() {
 		m.screen = screenSetupHarness
@@ -154,11 +162,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case personaEventMsg:
 		return m.handleEvent(msg.ev), nil
 
+	case workerEventMsg:
+		beforeChromeH := m.screenChromeHeight()
+		m.applyWorkerStatus(msg.entry)
+		if m.ready && m.screenChromeHeight() != beforeChromeH {
+			m.layout(m.termW, m.termH)
+			m.refreshMessages()
+		}
+		return m, nil
+
 	case newChatMsg:
 		_ = m.app.NewSession()
 		m.messages.Clear()
 		m.working = false
 		m.expr = Resting
+		m.noteActivityAt(time.Now())
 		m.screen = screenMessages
 		m.active = nil
 		return m, nil
@@ -169,11 +187,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if mouse, ok := msg.(tea.MouseMsg); ok {
-		m.lastScroll = time.Now()
+		now := time.Now()
+		m.lastScroll = now
+		m.noteActivityAt(now)
 		if mouse.Action == tea.MouseActionPress && mouse.Button == tea.MouseButtonLeft && m.sideButtonHit(mouse.X, mouse.Y) {
-			m.pressSideButton(time.Now())
+			m.pressSideButton(now)
 			return m, nil
 		}
+	}
+
+	if k, ok := msg.(tea.KeyMsg); ok && !m.isMouseNoise(k) {
+		m.noteActivityAt(time.Now())
 	}
 
 	if m.takeoverActive() {
@@ -310,7 +334,8 @@ func (m *Model) layout(w, h int) {
 	}
 	frameW = interiorW + 4
 	interiorH := frameH - 2
-	minInteriorH := grilleHeight + screenBorder + screenChromeHeight + trayHeight + 1
+	chromeH := m.screenChromeHeight()
+	minInteriorH := grilleHeight + screenBorder + chromeH + trayHeight + 1
 	if interiorH < minInteriorH {
 		interiorH = minInteriorH
 	}
@@ -321,12 +346,12 @@ func (m *Model) layout(w, h int) {
 		screenW = 1
 	}
 	screenH := interiorH - grilleHeight
-	if screenH < screenBorder+screenChromeHeight+trayHeight+1 {
-		screenH = screenBorder + screenChromeHeight + trayHeight + 1
+	if screenH < screenBorder+chromeH+trayHeight+1 {
+		screenH = screenBorder + chromeH + trayHeight + 1
 	}
 	m.screenW, m.screenH = screenW, screenH
 
-	bodyH := screenH - screenBorder - screenChromeHeight
+	bodyH := screenH - screenBorder - chromeH
 	if bodyH < trayHeight+1 {
 		bodyH = trayHeight + 1
 	}
@@ -356,7 +381,7 @@ func (m *Model) layout(w, h int) {
 	// border, status readout, message viewport, and the tray's rows.
 	const screenTopBorder = 1
 	const trayTopBorder = 1
-	m.barY = topMargin + antennaHeight + 1 + grilleHeight + screenTopBorder + screenChromeHeight + m.messages.ViewportHeight() + trayTopBorder + inputHeight + dividerHeight
+	m.barY = topMargin + antennaHeight + 1 + grilleHeight + screenTopBorder + chromeH + m.messages.ViewportHeight() + trayTopBorder + inputHeight + dividerHeight
 	m.sideX, m.sideY = leftMargin+frameW, topMargin+sideButtonTopRel
 	m.sideW, m.sideH = sideW, sideButtonHeight
 }
@@ -377,14 +402,24 @@ func sideButtonReserve(termW int) int {
 }
 
 func (m *Model) tickExpression() {
+	now := time.Now()
 	switch {
-	case m.working:
+	case m.working || now.Before(m.takeoverUntil):
 		m.expr = Working
-	case time.Now().Before(m.happyTill):
+	case now.Before(m.happyTill):
 		m.expr = Happy
+	case strings.TrimSpace(m.messages.Value()) == "" && !m.lastActivityAt.IsZero() && now.Sub(m.lastActivityAt) >= sleepyAfter:
+		m.expr = Sleepy
 	case m.frame%8 == 0:
 		m.expr = Blink
 	default:
+		m.expr = Resting
+	}
+}
+
+func (m *Model) noteActivityAt(now time.Time) {
+	m.lastActivityAt = now
+	if m.expr == Sleepy {
 		m.expr = Resting
 	}
 }
@@ -424,7 +459,9 @@ func (m Model) handleEvent(ev claudeproc.Event) Model {
 	case claudeproc.KindResult:
 		m.working = false
 		m.expr = Happy
-		m.happyTill = time.Now().Add(happyFor)
+		now := time.Now()
+		m.happyTill = now.Add(happyFor)
+		m.noteActivityAt(now)
 		m.ctx = m.app.ContextInfo()
 	}
 	return m
@@ -443,6 +480,7 @@ func (m Model) send() Model {
 	m.messages.ResetInput()
 	m.working = true
 	m.expr = Working
+	m.noteActivityAt(time.Now())
 	m.messages.GotoBottom() // sending always returns you to the live conversation
 	return m
 }
@@ -454,7 +492,7 @@ func (m *Model) openScreen(action Action) {
 		m.active = newSettingsScreen(m.app)
 	case ActionContext:
 		m.screen = screenContext
-		m.active = newContextScreen(m.app.ContextInfo())
+		m.active = newContextScreen(m.app)
 	case ActionMemory:
 		text, _ := m.app.MemorySummary()
 		m.screen = screenMemory
@@ -506,7 +544,7 @@ func (m Model) screenShell() string {
 }
 
 func (m Model) screenBodyHeight() int {
-	h := m.screenH - screenBorder - screenChromeHeight
+	h := m.screenH - screenBorder - m.screenChromeHeight()
 	if h < 1 {
 		return 1
 	}

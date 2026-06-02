@@ -174,6 +174,38 @@ func TestUpdate_ResultRefreshesContextAndHappy(t *testing.T) {
 	}
 }
 
+func TestTickExpression_ReactiveStates(t *testing.T) {
+	m := newTestModel(&stubApp{})
+
+	m.working = true
+	m.tickExpression()
+	if m.expr != Working {
+		t.Fatalf("working expr = %v, want Working", m.expr)
+	}
+
+	m.working = false
+	m.happyTill = time.Now().Add(time.Second)
+	m.tickExpression()
+	if m.expr != Happy {
+		t.Fatalf("happy expr = %v, want Happy", m.expr)
+	}
+
+	m.happyTill = time.Time{}
+	m.lastActivityAt = time.Now().Add(-sleepyAfter - time.Second)
+	m.frame = 1
+	m.tickExpression()
+	if m.expr != Sleepy {
+		t.Fatalf("idle expr = %v, want Sleepy", m.expr)
+	}
+
+	m.lastActivityAt = time.Now()
+	m.frame = 8
+	m.tickExpression()
+	if m.expr != Blink {
+		t.Fatalf("blink expr = %v, want Blink", m.expr)
+	}
+}
+
 func TestNew_PrefillsFromHistory(t *testing.T) {
 	app := &stubApp{history: []HistoryEntry{
 		{Role: RoleYou, Text: "first"},

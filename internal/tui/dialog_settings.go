@@ -10,23 +10,25 @@ import (
 // settingsScreen edits harness settings + compaction threshold. Harness/model
 // changes apply on the next session; the threshold is persisted immediately.
 type settingsScreen struct {
-	app       AppController
-	harness   string
-	model     string
-	effort    string
-	threshold float64
-	field     int // 0 = model, 1 = threshold, 2 = harness, 3 = effort
+	app        AppController
+	harness    string
+	model      string
+	effort     string
+	threshold  float64
+	dreamChats int
+	field      int // 0 = model, 1 = threshold, 2 = dreams, 3 = harness, 4 = effort
 }
 
 func newSettingsScreen(app AppController) *settingsScreen {
 	st := app.Settings()
 	st.Normalize()
 	return &settingsScreen{
-		app:       app,
-		harness:   st.Harness,
-		model:     st.ActiveModel(),
-		effort:    st.ReasoningEffort,
-		threshold: st.CompactionThreshold,
+		app:        app,
+		harness:    st.Harness,
+		model:      st.ActiveModel(),
+		effort:     st.ReasoningEffort,
+		threshold:  st.CompactionThreshold,
+		dreamChats: st.DreamChatThreshold,
 	}
 }
 
@@ -79,6 +81,16 @@ func (d *settingsScreen) adjustThreshold(delta float64) {
 	}
 }
 
+func (d *settingsScreen) adjustDreamChats(delta int) {
+	d.dreamChats += delta
+	if d.dreamChats < 1 {
+		d.dreamChats = 1
+	}
+	if d.dreamChats > 50 {
+		d.dreamChats = 50
+	}
+}
+
 func (d *settingsScreen) save() {
 	_ = d.app.SetModel(d.model)
 	st := d.app.Settings()
@@ -86,6 +98,7 @@ func (d *settingsScreen) save() {
 	st.SetActiveModel(d.model)
 	st.ReasoningEffort = d.effort
 	st.CompactionThreshold = d.threshold
+	st.DreamChatThreshold = d.dreamChats
 	st.Normalize()
 	_ = d.app.SaveSettings(st)
 }
@@ -102,7 +115,7 @@ func (d *settingsScreen) Update(msg tea.Msg) (controlScreen, tea.Cmd) {
 		d.save()
 		return nil, nil
 	case "up", "down", "tab":
-		d.field = (d.field + 1) % 4
+		d.field = (d.field + 1) % 5
 	case "left":
 		switch d.field {
 		case 0:
@@ -110,8 +123,10 @@ func (d *settingsScreen) Update(msg tea.Msg) (controlScreen, tea.Cmd) {
 		case 1:
 			d.adjustThreshold(-0.05)
 		case 2:
-			d.cycleHarness(-1)
+			d.adjustDreamChats(-1)
 		case 3:
+			d.cycleHarness(-1)
+		case 4:
 			d.cycleEffort(-1)
 		}
 	case "right":
@@ -121,8 +136,10 @@ func (d *settingsScreen) Update(msg tea.Msg) (controlScreen, tea.Cmd) {
 		case 1:
 			d.adjustThreshold(0.05)
 		case 2:
-			d.cycleHarness(1)
+			d.adjustDreamChats(1)
 		case 3:
+			d.cycleHarness(1)
+		case 4:
 			d.cycleEffort(1)
 		}
 	}
@@ -140,7 +157,8 @@ func (d *settingsScreen) row(idx int, label, value string) string {
 func (d *settingsScreen) View(width, height, frame int) string {
 	body := d.row(0, "model", d.model) + "\n" +
 		d.row(1, "context", fmt.Sprintf("compact at %.0f%%", d.threshold*100)) + "\n" +
-		d.row(2, "harness", d.harness) + "\n" +
-		d.row(3, "effort", d.effort)
+		d.row(2, "dreams", fmt.Sprintf("after %d chats", d.dreamChats)) + "\n" +
+		d.row(3, "harness", d.harness) + "\n" +
+		d.row(4, "effort", d.effort)
 	return renderControlPage("SETTINGS", "CONTROL", body, "up/down field   left/right change   enter save   esc back", width, height, frame)
 }

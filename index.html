@@ -1,0 +1,1689 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>io - in-terminal AI personal assistant</title>
+  <meta
+    name="description"
+    content="io is a kawaii 16-bit in-terminal AI personal assistant with a persistent persona, local memory, worker orchestration, and a pocket-communicator TUI."
+  >
+  <style>
+    :root {
+      --mint: #a8e6cf;
+      --pink: #ffb3d9;
+      --lavender: #c8a2e0;
+      --cream: #fff5e1;
+      --dim: #9a8fb0;
+      --ink: #5b4b7a;
+      --screen: #2d2c38;
+      --screen-deep: #20202a;
+      --shell: #34333f;
+      --line: rgba(200, 162, 224, 0.56);
+      --yellow: #ffe477;
+      --aqua: #8ae8ff;
+      --coral: #ff6f8f;
+      --shadow: rgba(10, 8, 18, 0.64);
+      --radius: 8px;
+      --font: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--cream);
+      background:
+        linear-gradient(rgba(168, 230, 207, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(200, 162, 224, 0.05) 1px, transparent 1px),
+        repeating-linear-gradient(135deg, rgba(255, 179, 217, 0.045) 0 12px, transparent 12px 44px),
+        repeating-linear-gradient(45deg, rgba(168, 230, 207, 0.035) 0 8px, transparent 8px 52px),
+        var(--screen-deep);
+      background-size: 16px 16px, 16px 16px, auto, auto, auto;
+      font-family: var(--font);
+      letter-spacing: 0;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      pointer-events: none;
+      content: "";
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.035),
+        rgba(255, 255, 255, 0.035) 1px,
+        transparent 1px,
+        transparent 8px
+      );
+      mix-blend-mode: screen;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .scroll-meter {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      height: 6px;
+      background: rgba(91, 75, 122, 0.5);
+    }
+
+    .scroll-meter span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background:
+        linear-gradient(90deg, var(--mint), var(--yellow), var(--pink), var(--lavender));
+      image-rendering: pixelated;
+      box-shadow: 0 0 18px rgba(168, 230, 207, 0.7);
+    }
+
+    .cursor-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .trail-pixel {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      transform: translate(-50%, -50%);
+      background: var(--pink);
+      box-shadow:
+        8px 0 0 var(--mint),
+        0 8px 0 var(--yellow),
+        8px 8px 0 var(--lavender);
+      animation: trailFade 620ms steps(5, end) forwards;
+    }
+
+    @keyframes trailFade {
+      to {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.1) rotate(90deg);
+      }
+    }
+
+    .topbar {
+      position: sticky;
+      top: 6px;
+      z-index: 70;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      width: min(1180px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 12px 0;
+      color: var(--cream);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 38px;
+      color: var(--mint);
+      font-weight: 900;
+      text-transform: lowercase;
+      text-shadow: 3px 3px 0 var(--ink);
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 44px;
+      height: 36px;
+      border: 2px solid var(--lavender);
+      border-radius: var(--radius);
+      background: var(--screen);
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+
+    .brand-dot {
+      width: 10px;
+      height: 10px;
+      background: var(--mint);
+      box-shadow: 0 0 0 4px rgba(168, 230, 207, 0.16), 0 0 16px var(--mint);
+      animation: pulse 1.4s steps(2, end) infinite;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      border: 2px solid rgba(200, 162, 224, 0.54);
+      border-radius: var(--radius);
+      background: rgba(32, 32, 42, 0.78);
+      box-shadow: 5px 5px 0 rgba(91, 75, 122, 0.7);
+      backdrop-filter: blur(10px);
+    }
+
+    .nav-links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 10px;
+      color: var(--dim);
+      border-radius: 4px;
+    }
+
+    .nav-links a:hover,
+    .nav-links a:focus-visible {
+      color: var(--screen-deep);
+      outline: 0;
+      background: var(--mint);
+    }
+
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 0.88fr) minmax(340px, 1.12fr);
+      align-items: center;
+      gap: clamp(1.5rem, 5vw, 5rem);
+      min-height: 90svh;
+      padding: clamp(4rem, 8vw, 7rem) max(18px, calc((100vw - 1180px) / 2)) 4.5rem;
+      overflow: hidden;
+      isolation: isolate;
+    }
+
+    .hero::after {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: -1;
+      height: 120px;
+      content: "";
+      background:
+        linear-gradient(transparent, rgba(168, 230, 207, 0.14)),
+        repeating-linear-gradient(90deg, transparent 0 24px, rgba(200, 162, 224, 0.24) 24px 26px);
+    }
+
+    .pixel-sky {
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(20, 19, 30, 0.38), rgba(32, 32, 42, 0.94)),
+        repeating-linear-gradient(90deg, rgba(255, 245, 225, 0.04) 0 2px, transparent 2px 30px);
+    }
+
+    .sky-chip {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      opacity: 0.9;
+      background: var(--mint);
+      box-shadow:
+        18px 0 0 var(--pink),
+        0 18px 0 var(--lavender),
+        18px 18px 0 var(--yellow);
+      animation: drift 12s steps(18, end) infinite;
+    }
+
+    .sky-chip:nth-child(1) {
+      left: 7%;
+      top: 18%;
+      animation-duration: 16s;
+    }
+
+    .sky-chip:nth-child(2) {
+      left: 82%;
+      top: 13%;
+      transform: scale(0.75);
+      animation-duration: 13s;
+      animation-delay: -4s;
+    }
+
+    .sky-chip:nth-child(3) {
+      left: 60%;
+      top: 74%;
+      transform: scale(0.55);
+      animation-duration: 18s;
+      animation-delay: -8s;
+    }
+
+    .sky-chip:nth-child(4) {
+      left: 26%;
+      top: 67%;
+      transform: scale(0.65);
+      animation-duration: 15s;
+      animation-delay: -2s;
+    }
+
+    .sky-chip:nth-child(5) {
+      left: 45%;
+      top: 20%;
+      transform: scale(0.45);
+      animation-duration: 11s;
+      animation-delay: -6s;
+    }
+
+    .sky-band {
+      position: absolute;
+      left: -5%;
+      right: -5%;
+      height: 36px;
+      opacity: 0.48;
+      background:
+        repeating-linear-gradient(90deg, var(--ink) 0 18px, transparent 18px 34px),
+        linear-gradient(90deg, transparent, var(--lavender), transparent);
+      filter: drop-shadow(0 0 12px rgba(200, 162, 224, 0.3));
+      animation: crawl 22s linear infinite;
+    }
+
+    .sky-band.one {
+      top: 31%;
+    }
+
+    .sky-band.two {
+      bottom: 14%;
+      animation-direction: reverse;
+      animation-duration: 27s;
+    }
+
+    .hero-copy {
+      position: relative;
+      z-index: 2;
+      max-width: 620px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 34px;
+      margin: 0 0 18px;
+      padding: 0 10px;
+      color: var(--screen-deep);
+      background: var(--mint);
+      border: 2px solid var(--screen-deep);
+      border-radius: 4px;
+      box-shadow: 5px 5px 0 var(--ink);
+      font-size: 0.86rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      width: 10px;
+      height: 10px;
+      content: "";
+      background: var(--pink);
+      box-shadow: 0 0 0 4px rgba(255, 179, 217, 0.32);
+      animation: pulse 1s steps(2, end) infinite;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      margin-bottom: 18px;
+      color: var(--cream);
+      font-size: 10rem;
+      line-height: 0.75;
+      letter-spacing: 0;
+      text-shadow:
+        8px 0 0 var(--pink),
+        0 8px 0 var(--ink),
+        12px 12px 0 rgba(168, 230, 207, 0.35);
+    }
+
+    .subtitle {
+      max-width: 560px;
+      margin-bottom: 28px;
+      color: var(--cream);
+      font-size: 1.35rem;
+      line-height: 1.55;
+      text-shadow: 2px 2px 0 rgba(32, 32, 42, 0.92);
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .button {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 16px;
+      color: var(--screen-deep);
+      background: var(--pink);
+      border: 2px solid var(--cream);
+      border-radius: 4px;
+      box-shadow: 6px 6px 0 var(--ink);
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .button.alt {
+      background: var(--mint);
+    }
+
+    .button:hover,
+    .button:focus-visible {
+      outline: 0;
+      transform: translate(2px, 2px);
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+
+    .button:active {
+      transform: translate(5px, 5px);
+      box-shadow: 1px 1px 0 var(--ink);
+    }
+
+    .command-chip {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      min-height: 42px;
+      padding: 0 12px;
+      overflow: hidden;
+      color: var(--mint);
+      background: rgba(32, 32, 42, 0.92);
+      border: 2px solid var(--line);
+      border-radius: 4px;
+      box-shadow: inset 0 -4px 0 rgba(91, 75, 122, 0.42);
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .command-chip span {
+      margin-right: 10px;
+      color: var(--pink);
+    }
+
+    .hero-device {
+      position: relative;
+      z-index: 1;
+      margin: 0;
+      transform: rotate(1.5deg);
+      filter: drop-shadow(24px 24px 0 rgba(15, 13, 22, 0.5));
+    }
+
+    .hero-device::before {
+      position: absolute;
+      top: -24px;
+      left: 8%;
+      width: 86px;
+      height: 44px;
+      content: "ANT .)))";
+      color: var(--mint);
+      font-size: 0.82rem;
+      font-weight: 900;
+      text-shadow: 0 0 16px rgba(168, 230, 207, 0.7);
+      animation: blink 1.25s steps(2, end) infinite;
+    }
+
+    .hero-device img {
+      width: min(720px, 100%);
+      border: 2px solid rgba(200, 162, 224, 0.65);
+      border-radius: var(--radius);
+      background: var(--screen);
+      image-rendering: auto;
+    }
+
+    .hero-device figcaption {
+      position: absolute;
+      right: 6%;
+      bottom: 7%;
+      padding: 7px 9px;
+      color: var(--screen-deep);
+      background: var(--yellow);
+      border: 2px solid var(--screen-deep);
+      border-radius: 4px;
+      box-shadow: 5px 5px 0 var(--ink);
+      font-size: 0.75rem;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .next-tease {
+      position: absolute;
+      right: max(18px, calc((100vw - 1180px) / 2));
+      bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--dim);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+
+    .next-tease::before,
+    .next-tease::after {
+      width: 16px;
+      height: 16px;
+      content: "";
+      background: var(--mint);
+      box-shadow: 16px 0 0 var(--pink), 0 16px 0 var(--lavender), 16px 16px 0 var(--yellow);
+      transform: scale(0.55);
+    }
+
+    section {
+      position: relative;
+      padding: clamp(4rem, 8vw, 7rem) max(18px, calc((100vw - 1180px) / 2));
+    }
+
+    .section-heading {
+      max-width: 780px;
+      margin-bottom: clamp(2rem, 5vw, 3.75rem);
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 30px;
+      margin: 0 0 14px;
+      color: var(--mint);
+      font-size: 0.8rem;
+      font-weight: 900;
+      letter-spacing: 0;
+      text-transform: uppercase;
+    }
+
+    .kicker::before {
+      width: 12px;
+      height: 12px;
+      content: "";
+      background: var(--pink);
+      box-shadow: 12px 0 0 var(--yellow), 0 12px 0 var(--mint);
+    }
+
+    h2 {
+      margin-bottom: 18px;
+      color: var(--cream);
+      font-size: 3.5rem;
+      line-height: 1.05;
+      letter-spacing: 0;
+      text-shadow: 5px 5px 0 var(--ink);
+    }
+
+    h3 {
+      color: var(--cream);
+      font-size: 1.24rem;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .section-heading p,
+    .feature-card p,
+    .step p,
+    .lab-copy p,
+    .install-copy p,
+    .command-panel p {
+      color: var(--dim);
+      line-height: 1.65;
+    }
+
+    .signal-ribbon {
+      display: flex;
+      gap: 18px;
+      width: max-content;
+      margin-block: -18px 0;
+      padding: 14px 0;
+      color: var(--screen-deep);
+      background: var(--yellow);
+      border-block: 2px solid var(--screen-deep);
+      box-shadow: 0 6px 0 var(--ink), 0 -6px 0 rgba(168, 230, 207, 0.22);
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+      animation: ribbonRun 22s linear infinite;
+    }
+
+    .signal-ribbon span {
+      display: inline-flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .signal-ribbon span::after {
+      width: 12px;
+      height: 12px;
+      content: "";
+      background: var(--pink);
+      box-shadow: 12px 0 0 var(--mint), 24px 0 0 var(--lavender);
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      position: relative;
+      min-height: 250px;
+      padding: 22px;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(255, 245, 225, 0.035), transparent),
+        var(--screen);
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 8px 8px 0 rgba(91, 75, 122, 0.58);
+    }
+
+    .feature-card::after {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 8px;
+      content: "";
+      background: repeating-linear-gradient(90deg, var(--mint) 0 16px, var(--pink) 16px 32px, var(--lavender) 32px 48px, var(--yellow) 48px 64px);
+    }
+
+    .feature-card:hover {
+      transform: translate(0, -5px);
+      box-shadow: 8px 13px 0 rgba(91, 75, 122, 0.58);
+    }
+
+    .feature-chip {
+      display: inline-grid;
+      place-items: center;
+      width: 56px;
+      height: 50px;
+      margin-bottom: 18px;
+      color: var(--screen-deep);
+      background: var(--mint);
+      border: 2px solid var(--screen-deep);
+      border-radius: 4px;
+      box-shadow: 5px 5px 0 var(--ink);
+      font-weight: 900;
+    }
+
+    .feature-card:nth-child(2) .feature-chip,
+    .feature-card:nth-child(5) .feature-chip {
+      background: var(--pink);
+    }
+
+    .feature-card:nth-child(3) .feature-chip,
+    .feature-card:nth-child(6) .feature-chip {
+      background: var(--yellow);
+    }
+
+    .feature-card p {
+      margin-bottom: 0;
+    }
+
+    .showcase {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
+      align-items: center;
+      gap: clamp(2rem, 6vw, 5rem);
+      background:
+        linear-gradient(90deg, rgba(168, 230, 207, 0.07), transparent 42%),
+        rgba(32, 32, 42, 0.58);
+    }
+
+    .pocket-stack {
+      position: relative;
+      min-height: 560px;
+    }
+
+    .pocket-shot {
+      position: sticky;
+      top: 86px;
+      margin: 0;
+    }
+
+    .pocket-shot img {
+      width: 100%;
+      border: 2px solid var(--lavender);
+      border-radius: var(--radius);
+      background: var(--screen);
+      box-shadow: 16px 16px 0 var(--ink);
+    }
+
+    .pocket-shot figcaption {
+      margin-top: 18px;
+      color: var(--dim);
+      line-height: 1.6;
+    }
+
+    .spec-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .spec-row {
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+      padding: 16px 0;
+      border-top: 2px dashed rgba(200, 162, 224, 0.42);
+    }
+
+    .spec-row:last-child {
+      border-bottom: 2px dashed rgba(200, 162, 224, 0.42);
+    }
+
+    .spec-row strong {
+      color: var(--mint);
+      text-transform: uppercase;
+    }
+
+    .spec-row span {
+      color: var(--cream);
+      line-height: 1.6;
+    }
+
+    .journey {
+      background:
+        repeating-linear-gradient(0deg, rgba(255, 245, 225, 0.025) 0 2px, transparent 2px 18px),
+        var(--screen-deep);
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: minmax(240px, 0.74fr) minmax(320px, 1.26fr);
+      gap: clamp(2rem, 6vw, 4.5rem);
+      align-items: start;
+    }
+
+    .signal-console {
+      position: sticky;
+      top: 90px;
+      min-height: 420px;
+      padding: 22px;
+      overflow: hidden;
+      background: var(--screen);
+      border: 2px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 8px 8px 0 var(--ink);
+    }
+
+    .console-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 18px;
+      padding-bottom: 14px;
+      border-bottom: 2px solid rgba(200, 162, 224, 0.5);
+      color: var(--dim);
+      text-transform: uppercase;
+    }
+
+    .face-badge {
+      display: inline-grid;
+      place-items: center;
+      min-width: 92px;
+      min-height: 42px;
+      color: var(--mint);
+      border: 2px solid var(--lavender);
+      border-radius: 4px;
+      background: var(--screen-deep);
+      box-shadow: inset 0 0 0 4px rgba(168, 230, 207, 0.05);
+      font-weight: 900;
+    }
+
+    .meter-stack {
+      display: grid;
+      gap: 12px;
+    }
+
+    .meter {
+      position: relative;
+      height: 22px;
+      overflow: hidden;
+      border: 2px solid var(--lavender);
+      border-radius: 4px;
+      background: var(--screen-deep);
+    }
+
+    .meter span {
+      display: block;
+      width: 68%;
+      height: 100%;
+      background: repeating-linear-gradient(90deg, var(--mint) 0 14px, var(--yellow) 14px 20px);
+      animation: meterPulse 1.4s steps(4, end) infinite;
+    }
+
+    .meter.is-low span {
+      width: 46%;
+    }
+
+    .meter.is-high span {
+      width: 82%;
+    }
+
+    .console-lines {
+      margin: 22px 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--cream);
+      line-height: 1.8;
+    }
+
+    .console-lines li::before {
+      content: "> ";
+      color: var(--pink);
+    }
+
+    .steps {
+      display: grid;
+      gap: 28px;
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+      padding: 24px;
+      background: rgba(45, 44, 56, 0.78);
+      border: 2px solid rgba(200, 162, 224, 0.46);
+      border-radius: var(--radius);
+      box-shadow: 8px 8px 0 rgba(91, 75, 122, 0.5);
+    }
+
+    .step-number {
+      display: grid;
+      place-items: center;
+      width: 70px;
+      height: 62px;
+      color: var(--screen-deep);
+      background: var(--pink);
+      border: 2px solid var(--screen-deep);
+      border-radius: 4px;
+      box-shadow: 5px 5px 0 var(--ink);
+      font-weight: 900;
+      font-size: 1.2rem;
+    }
+
+    .step:nth-child(2) .step-number {
+      background: var(--mint);
+    }
+
+    .step:nth-child(3) .step-number {
+      background: var(--yellow);
+    }
+
+    .step:nth-child(4) .step-number {
+      background: var(--lavender);
+    }
+
+    .step p:last-child {
+      margin-bottom: 0;
+    }
+
+    .dream-band {
+      overflow: hidden;
+      color: var(--screen-deep);
+      background:
+        linear-gradient(90deg, var(--mint), var(--cream), var(--pink));
+      border-block: 3px solid var(--screen-deep);
+    }
+
+    .dream-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .dream-tile {
+      min-height: 180px;
+      padding: 18px;
+      color: var(--screen-deep);
+      background: rgba(255, 245, 225, 0.65);
+      border: 2px solid var(--screen-deep);
+      border-radius: var(--radius);
+      box-shadow: 6px 6px 0 rgba(91, 75, 122, 0.55);
+    }
+
+    .dream-tile strong {
+      display: block;
+      margin-bottom: 12px;
+      font-size: 1.05rem;
+      text-transform: uppercase;
+    }
+
+    .dream-tile p {
+      margin: 0;
+      line-height: 1.55;
+    }
+
+    .dream-band .kicker {
+      color: var(--screen-deep);
+    }
+
+    .dream-band h2 {
+      color: var(--screen-deep);
+      text-shadow: 5px 5px 0 rgba(255, 255, 255, 0.42);
+    }
+
+    .lab {
+      display: grid;
+      grid-template-columns: minmax(320px, 1.05fr) minmax(280px, 0.95fr);
+      gap: clamp(2rem, 6vw, 4.5rem);
+      align-items: center;
+      background: var(--screen-deep);
+    }
+
+    .lab-terminal {
+      overflow: hidden;
+      background: var(--screen);
+      border: 2px solid var(--lavender);
+      border-radius: var(--radius);
+      box-shadow: 14px 14px 0 var(--ink);
+    }
+
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 12px 14px;
+      color: var(--dim);
+      background: var(--shell);
+      border-bottom: 2px solid var(--line);
+      text-transform: uppercase;
+    }
+
+    .terminal-lights {
+      display: flex;
+      gap: 8px;
+    }
+
+    .terminal-lights span {
+      width: 13px;
+      height: 13px;
+      background: var(--coral);
+      border: 2px solid var(--screen-deep);
+    }
+
+    .terminal-lights span:nth-child(2) {
+      background: var(--yellow);
+    }
+
+    .terminal-lights span:nth-child(3) {
+      background: var(--mint);
+    }
+
+    .terminal-body {
+      min-height: 360px;
+      padding: 22px;
+    }
+
+    .chat-line {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+
+    .chat-line.user {
+      justify-content: flex-end;
+    }
+
+    .avatar {
+      flex: 0 0 auto;
+      min-width: 80px;
+      padding: 8px;
+      color: var(--mint);
+      border: 2px solid var(--lavender);
+      border-radius: 4px;
+      text-align: center;
+      animation: bob 1.8s steps(4, end) infinite;
+    }
+
+    .bubble {
+      max-width: 74%;
+      padding: 12px;
+      color: var(--mint);
+      border: 2px solid var(--mint);
+      border-radius: var(--radius);
+      line-height: 1.55;
+    }
+
+    .user .bubble {
+      color: var(--pink);
+      border-color: var(--pink);
+    }
+
+    .typing {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .typing span {
+      width: 8px;
+      height: 8px;
+      background: var(--mint);
+      animation: typing 900ms steps(2, end) infinite;
+    }
+
+    .typing span:nth-child(2) {
+      animation-delay: 120ms;
+    }
+
+    .typing span:nth-child(3) {
+      animation-delay: 240ms;
+    }
+
+    .mood-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .mood-buttons button {
+      min-height: 42px;
+      padding: 0 12px;
+      color: var(--screen-deep);
+      background: var(--cream);
+      border: 2px solid var(--screen-deep);
+      border-radius: 4px;
+      box-shadow: 4px 4px 0 var(--ink);
+      cursor: pointer;
+      font-weight: 900;
+    }
+
+    .mood-buttons button[aria-pressed="true"] {
+      background: var(--mint);
+    }
+
+    .install {
+      display: grid;
+      grid-template-columns: minmax(280px, 0.82fr) minmax(360px, 1.18fr);
+      gap: clamp(2rem, 6vw, 4.5rem);
+      align-items: start;
+      background:
+        linear-gradient(180deg, rgba(255, 179, 217, 0.08), transparent),
+        var(--screen);
+    }
+
+    .command-panel {
+      overflow: hidden;
+      border: 2px solid var(--lavender);
+      border-radius: var(--radius);
+      background: var(--screen-deep);
+      box-shadow: 12px 12px 0 var(--ink);
+    }
+
+    .command-panel pre {
+      margin: 0;
+      padding: 22px;
+      overflow-x: auto;
+      color: var(--mint);
+      line-height: 1.75;
+      white-space: pre;
+    }
+
+    .command-panel code {
+      font: inherit;
+    }
+
+    .command-panel .prompt {
+      color: var(--pink);
+    }
+
+    .command-panel .comment {
+      color: var(--dim);
+    }
+
+    .footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 24px max(18px, calc((100vw - 1180px) / 2));
+      color: var(--dim);
+      background: var(--screen-deep);
+      border-top: 2px solid rgba(200, 162, 224, 0.42);
+    }
+
+    .footer strong {
+      color: var(--mint);
+    }
+
+    .fade-in,
+    .image-reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 720ms steps(8, end), transform 720ms steps(8, end), clip-path 720ms steps(8, end);
+    }
+
+    .image-reveal {
+      clip-path: inset(0 0 18% 0);
+    }
+
+    .fade-in.is-visible,
+    .image-reveal.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+      clip-path: inset(0 0 0 0);
+    }
+
+    @keyframes drift {
+      0% {
+        translate: 0 0;
+      }
+      40% {
+        translate: 16px -24px;
+      }
+      70% {
+        translate: -12px 12px;
+      }
+      100% {
+        translate: 0 0;
+      }
+    }
+
+    @keyframes crawl {
+      from {
+        transform: translateX(-80px);
+      }
+      to {
+        transform: translateX(80px);
+      }
+    }
+
+    @keyframes pulse {
+      50% {
+        opacity: 0.35;
+      }
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0.18;
+      }
+    }
+
+    @keyframes ribbonRun {
+      from {
+        transform: translateX(0);
+      }
+      to {
+        transform: translateX(-50%);
+      }
+    }
+
+    @keyframes meterPulse {
+      50% {
+        filter: brightness(1.35);
+      }
+    }
+
+    @keyframes bob {
+      50% {
+        transform: translateY(-4px);
+      }
+    }
+
+    @keyframes typing {
+      50% {
+        transform: translateY(-6px);
+        background: var(--pink);
+      }
+    }
+
+    @media (max-width: 980px) {
+      .hero,
+      .showcase,
+      .timeline,
+      .lab,
+      .install {
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 8rem;
+      }
+
+      h2 {
+        font-size: 3rem;
+      }
+
+      .hero {
+        min-height: auto;
+        padding-top: 3.5rem;
+      }
+
+      .hero-device {
+        transform: none;
+      }
+
+      .feature-grid,
+      .dream-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .pocket-stack {
+        min-height: auto;
+      }
+
+      .pocket-shot,
+      .signal-console {
+        position: relative;
+        top: auto;
+      }
+    }
+
+    @media (max-width: 700px) {
+      h1 {
+        font-size: 5.5rem;
+      }
+
+      h2 {
+        font-size: 2.25rem;
+      }
+
+      h3 {
+        font-size: 1.08rem;
+      }
+
+      .subtitle {
+        font-size: 1.05rem;
+      }
+
+      .eyebrow {
+        font-size: 0.76rem;
+      }
+
+      .topbar {
+        position: relative;
+        top: auto;
+        align-items: flex-start;
+      }
+
+      .nav-links {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        max-width: 220px;
+      }
+
+      .nav-links a {
+        min-height: 30px;
+        padding-inline: 8px;
+        font-size: 0.78rem;
+      }
+
+      .hero {
+        padding-bottom: 3.5rem;
+      }
+
+      .feature-grid,
+      .dream-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .step {
+        grid-template-columns: 1fr;
+      }
+
+      .spec-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .hero-actions,
+      .mood-buttons {
+        align-items: stretch;
+      }
+
+      .button,
+      .mood-buttons button {
+        width: 100%;
+      }
+
+      .bubble {
+        max-width: 100%;
+      }
+
+      .next-tease {
+        left: 18px;
+        right: auto;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: 0.001ms !important;
+      }
+
+      .trail-pixel {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="scroll-meter" aria-hidden="true"><span></span></div>
+  <div class="cursor-layer" aria-hidden="true"></div>
+
+  <nav class="topbar" aria-label="Primary navigation">
+    <a class="brand" href="#top" aria-label="io home">
+      <span class="brand-mark">io</span>
+      <span class="brand-dot" aria-hidden="true"></span>
+    </a>
+    <div class="nav-links">
+      <a href="#signal">Signal</a>
+      <a href="#persona">Persona</a>
+      <a href="#dream">Dreamer</a>
+      <a href="#install">Install</a>
+    </div>
+  </nav>
+
+  <header class="hero" id="top">
+    <div class="pixel-sky" aria-hidden="true">
+      <i class="sky-chip"></i>
+      <i class="sky-chip"></i>
+      <i class="sky-chip"></i>
+      <i class="sky-chip"></i>
+      <i class="sky-chip"></i>
+      <i class="sky-band one"></i>
+      <i class="sky-band two"></i>
+    </div>
+
+    <div class="hero-copy fade-in">
+      <p class="eyebrow">IO-LINK RX: personal terminal online</p>
+      <h1>io</h1>
+      <p class="subtitle">
+        An in-terminal AI personal assistant with a persistent soul, local memory,
+        agent harness control, and a 16-bit kawaii pocket-communicator glow.
+      </p>
+      <div class="hero-actions">
+        <a class="button alt" href="#install">> run io</a>
+        <a class="button" href="#signal">view signal</a>
+      </div>
+      <div class="command-chip" aria-label="Run command">
+        <span>$</span> go run ./cmd/io
+      </div>
+    </div>
+
+    <figure class="hero-device image-reveal">
+      <img src="io-example.png" alt="io terminal interface in a pastel pocket-communicator frame">
+      <figcaption>(o_o) ready</figcaption>
+    </figure>
+
+    <div class="next-tease" aria-hidden="true">memory garden below</div>
+  </header>
+
+  <div class="signal-ribbon" aria-hidden="true">
+    <span>persistent persona</span>
+    <span>local memory</span>
+    <span>codex and claude harnesses</span>
+    <span>worker relay</span>
+    <span>dream cadence</span>
+    <span>persistent persona</span>
+    <span>local memory</span>
+    <span>codex and claude harnesses</span>
+    <span>worker relay</span>
+    <span>dream cadence</span>
+  </div>
+
+  <section id="signal" class="showcase">
+    <div class="section-heading fade-in">
+      <p class="kicker">Signal shell</p>
+      <h2>A tiny command center that remembers where you left off.</h2>
+      <p>
+        io wraps a long-running assistant persona in a Bubble Tea TUI, stores its
+        own state under ~/.io, and drives installed agent CLIs instead of calling
+        model APIs directly.
+      </p>
+      <div class="spec-list">
+        <div class="spec-row fade-in">
+          <strong>Surface</strong>
+          <span>One terminal chat with pastel message bubbles, avatar moods, context readouts, and 90s beveled controls.</span>
+        </div>
+        <div class="spec-row fade-in">
+          <strong>Memory</strong>
+          <span>SOUL.md, state.json, history.jsonl, and ~/.io/memory keep identity and continuity outside any single project.</span>
+        </div>
+        <div class="spec-row fade-in">
+          <strong>Engine</strong>
+          <span>Claude Code or Codex CLI can sit behind the persona, with model and effort settings persisted for the next run.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pocket-stack">
+      <figure class="pocket-shot image-reveal">
+        <img src="io-example.png" alt="io TUI showing the pocket communicator terminal chrome">
+        <figcaption>
+          The landing page borrows the real TUI cues: mint io bubbles, pink user
+          controls, lavender chrome, IO-LINK status readouts, and the calm
+          pocket-device frame.
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="persona">
+    <div class="section-heading fade-in">
+      <p class="kicker">Pocket powers</p>
+      <h2>Built like a terminal assistant, dressed like a pixel daydream.</h2>
+      <p>
+        The visual treatment is playful; the architecture is practical. io keeps
+        persona, memory, workers, compaction settings, and harness state in clean
+        local subsystems.
+      </p>
+    </div>
+
+    <div class="feature-grid">
+      <article class="feature-card fade-in">
+        <div class="feature-chip">01</div>
+        <h3>Persistent persona</h3>
+        <p>First-run setup writes SOUL.md, then io appends it on launch so the assistant identity survives sessions.</p>
+      </article>
+      <article class="feature-card fade-in">
+        <div class="feature-chip">02</div>
+        <h3>Local memory shelf</h3>
+        <p>Memory lives in ~/.io/memory, keeping durable notes separate from the project you happen to be working in.</p>
+      </article>
+      <article class="feature-card fade-in">
+        <div class="feature-chip">03</div>
+        <h3>Agent harness switchboard</h3>
+        <p>Run through Claude Code or Codex CLI with stored model, effort, session, and resume settings.</p>
+      </article>
+      <article class="feature-card fade-in">
+        <div class="feature-chip">04</div>
+        <h3>Worker relay</h3>
+        <p>Spawn focused workers in target directories and surface their state in a glanceable terminal strip.</p>
+      </article>
+      <article class="feature-card fade-in">
+        <div class="feature-chip">05</div>
+        <h3>Context readout</h3>
+        <p>Usage and threshold settings stay visible, so compaction can become a managed part of the assistant loop.</p>
+      </article>
+      <article class="feature-card fade-in">
+        <div class="feature-chip">06</div>
+        <h3>Daily dreamer</h3>
+        <p>A planned background pass reflects on the day, dedups insights, and writes the durable ones back to memory.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="journey" id="dream">
+    <div class="section-heading fade-in">
+      <p class="kicker">Signal flow</p>
+      <h2>Chat, delegate, compact, dream.</h2>
+      <p>
+        io is designed as one friendly TUI over several boringly useful control
+        loops: one chat thread, one assistant identity, and a set of local
+        subsystems that keep the session coherent.
+      </p>
+    </div>
+
+    <div class="timeline">
+      <aside class="signal-console fade-in" aria-label="io signal console">
+        <div class="console-top">
+          <span>IO-LINK</span>
+          <span class="face-badge" id="console-face">(^_^)</span>
+        </div>
+        <div class="meter-stack" aria-hidden="true">
+          <div class="meter"><span></span></div>
+          <div class="meter is-low"><span></span></div>
+          <div class="meter is-high"><span></span></div>
+        </div>
+        <ul class="console-lines">
+          <li id="typed-line">persona ready</li>
+          <li>memory channel ~/.io</li>
+          <li>workers waiting</li>
+          <li>dream cadence armed</li>
+        </ul>
+      </aside>
+
+      <div class="steps">
+        <article class="step fade-in">
+          <div class="step-number">01</div>
+          <div>
+            <h3>Persona boots</h3>
+            <p>io loads state, selects the configured harness, resumes the saved session when it can, and keeps the single chat surface warm.</p>
+          </div>
+        </article>
+        <article class="step fade-in">
+          <div class="step-number">02</div>
+          <div>
+            <h3>You talk in one terminal</h3>
+            <p>The chat view stays compact: pastel bubbles, a compose tray, context usage, and quick controls for settings, memory, and new sessions.</p>
+          </div>
+        </article>
+        <article class="step fade-in">
+          <div class="step-number">03</div>
+          <div>
+            <h3>Workers do the side quests</h3>
+            <p>io can launch task-specific agent processes in other directories, track them, and bring the useful result back into the main thread.</p>
+          </div>
+        </article>
+        <article class="step fade-in">
+          <div class="step-number">04</div>
+          <div>
+            <h3>Memory gets curated</h3>
+            <p>The dreamer plan separates compaction from durable insight: summarize live context when needed, then consolidate memories when idle.</p>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="dream-band">
+    <div class="section-heading fade-in">
+      <p class="kicker">Tiny rituals</p>
+      <h2>Whimsy with a job.</h2>
+    </div>
+    <div class="dream-grid">
+      <div class="dream-tile fade-in">
+        <strong>blink tick</strong>
+        <p>The avatar swaps between resting, working, happy, and sleepy faces as the session changes state.</p>
+      </div>
+      <div class="dream-tile fade-in">
+        <strong>rx lights</strong>
+        <p>Status dots, meters, and scroll signals keep the page feeling like a live terminal instrument.</p>
+      </div>
+      <div class="dream-tile fade-in">
+        <strong>memory pocket</strong>
+        <p>State, history, and durable memories stay under ~/.io so the assistant can return to the same trail.</p>
+      </div>
+      <div class="dream-tile fade-in">
+        <strong>bevel buttons</strong>
+        <p>Settings, context, memory, and new-chat controls keep the terminal surface compact and tactile.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="lab" aria-label="io face lab">
+    <div class="lab-terminal image-reveal">
+      <div class="terminal-bar">
+        <div class="terminal-lights" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <span>/tmp/io ~/g/io</span>
+        <span>#1</span>
+      </div>
+      <div class="terminal-body">
+        <div class="chat-line">
+          <div class="avatar" id="lab-face">(^_^)</div>
+          <div class="bubble">io is ready. memory is linked. workers are standing by.</div>
+        </div>
+        <div class="chat-line user">
+          <div class="bubble">help me keep the day organized</div>
+        </div>
+        <div class="chat-line">
+          <div class="avatar">(*_*)</div>
+          <div class="bubble">
+            <span class="typing" aria-label="io is thinking">
+              <span></span><span></span><span></span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lab-copy fade-in">
+      <p class="kicker">Mood dial</p>
+      <h2>Small expressions make the terminal feel inhabited.</h2>
+      <p>
+        The TUI already defines calm, blink, happy, working, and sleepy states.
+        Those tiny expressions make status visible without interrupting the chat.
+      </p>
+      <div class="mood-buttons" aria-label="Face controls">
+        <button type="button" data-face="(^_^)" aria-pressed="true">ready</button>
+        <button type="button" data-face="(-_-)" aria-pressed="false">sleepy</button>
+        <button type="button" data-face="(*_*)" aria-pressed="false">working</button>
+        <button type="button" data-face="(^v^)" aria-pressed="false">happy</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="install" id="install">
+    <div class="install-copy fade-in">
+      <p class="kicker">Boot card</p>
+      <h2>Run it from the repo root.</h2>
+      <p>
+        io is a Go TUI. Install one supported agent CLI, authenticate it, then
+        start the assistant from this checkout.
+      </p>
+    </div>
+
+    <div class="command-panel image-reveal">
+      <pre><code><span class="comment"># normal assistant</span>
+<span class="prompt">$</span> go run ./cmd/io
+
+<span class="comment"># offline UI demo</span>
+<span class="prompt">$</span> go run ./cmd/iodemo
+
+<span class="comment"># choose a harness/model/effort</span>
+<span class="prompt">$</span> go run ./cmd/io --harness codex --model gpt-5.4 --effort medium</code></pre>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span><strong>io</strong> - pocket terminal assistant</span>
+    <span>Pastel Dream palette: mint, pink, lavender, cream.</span>
+  </footer>
+
+  <script>
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const meter = document.querySelector(".scroll-meter span");
+    const revealTargets = document.querySelectorAll(".fade-in, .image-reveal");
+    const typedLine = document.getElementById("typed-line");
+    const consoleFace = document.getElementById("console-face");
+    const labFace = document.getElementById("lab-face");
+    const moodButtons = document.querySelectorAll(".mood-buttons button");
+    const cursorLayer = document.querySelector(".cursor-layer");
+
+    function updateScrollMeter() {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = max > 0 ? (window.scrollY / max) * 100 : 0;
+      meter.style.width = `${progress}%`;
+    }
+
+    const observer = new IntersectionObserver(
+      entries => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+          }
+        });
+      },
+      { threshold: 0.18, rootMargin: "0px 0px -8% 0px" }
+    );
+
+    revealTargets.forEach(target => observer.observe(target));
+    updateScrollMeter();
+    window.addEventListener("scroll", updateScrollMeter, { passive: true });
+
+    const signalLines = [
+      "persona ready",
+      "codex/gpt-5.4 linked",
+      "memory ~/.io awake",
+      "worker queue clean",
+      "dream cadence armed",
+      "context 95%"
+    ];
+    const faces = ["(^_^)", "(o_o)", "(*_*)", "(-_-)", "(^.^)"];
+    let lineIndex = 0;
+
+    if (!reducedMotion && typedLine && consoleFace) {
+      window.setInterval(() => {
+        lineIndex = (lineIndex + 1) % signalLines.length;
+        typedLine.textContent = signalLines[lineIndex];
+        consoleFace.textContent = faces[lineIndex % faces.length];
+      }, 1600);
+    }
+
+    moodButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        moodButtons.forEach(item => item.setAttribute("aria-pressed", "false"));
+        button.setAttribute("aria-pressed", "true");
+        labFace.textContent = button.dataset.face;
+      });
+    });
+
+    if (!reducedMotion && cursorLayer && window.matchMedia("(pointer: fine)").matches) {
+      let lastTrail = 0;
+      window.addEventListener("pointermove", event => {
+        const now = performance.now();
+        if (now - lastTrail < 64) {
+          return;
+        }
+        lastTrail = now;
+        const pixel = document.createElement("span");
+        pixel.className = "trail-pixel";
+        pixel.style.left = `${event.clientX}px`;
+        pixel.style.top = `${event.clientY}px`;
+        cursorLayer.appendChild(pixel);
+        window.setTimeout(() => pixel.remove(), 700);
+      }, { passive: true });
+    }
+  </script>
+</body>
+</html>

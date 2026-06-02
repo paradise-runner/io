@@ -13,6 +13,8 @@ type stubApp struct {
 	saved       *personastate.State
 	settings    personastate.State
 	ctx         ContextInfo
+	compactErr  error
+	compactions int
 	memory      string
 	history     []HistoryEntry
 	needsSetup  bool
@@ -36,5 +38,6 @@ func (s *stubApp) SetModel(m string) error                  { s.setModel = m; re
 func (s *stubApp) Settings() personastate.State             { return s.settings }
 func (s *stubApp) SaveSettings(st personastate.State) error { s.saved = &st; return nil }
 func (s *stubApp) ContextInfo() ContextInfo                 { return s.ctx }
+func (s *stubApp) CompactNow() error                        { s.compactions++; return s.compactErr }
 func (s *stubApp) MemorySummary() (string, error)           { return s.memory, nil }
 func (s *stubApp) History() []HistoryEntry                  { return s.history }

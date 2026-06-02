@@ -21,6 +21,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) > 1 && os.Args[1] == "mcp-stdio" {
+		return runMCPStdio(os.Args[2:])
+	}
 	opts, err := parseFlags(os.Args[1:])
 	if err != nil {
 		return err

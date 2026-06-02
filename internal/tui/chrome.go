@@ -16,8 +16,9 @@ const (
 	// grilleHeight is the speaker/control hardware row that belongs to the
 	// device shell, outside the active screen.
 	grilleHeight = 1
-	// screenChromeHeight is the readout inside the screen: status line + rule.
-	screenChromeHeight = 2
+	// screenBaseChromeHeight is the readout inside the screen when there are no
+	// workers: status line + rule.
+	screenBaseChromeHeight = 2
 	// screenBorder is the active screen's top + bottom rounded-border rows.
 	screenBorder = 2
 	// mastCol is the column (relative to the frame's left edge) where the
@@ -25,7 +26,7 @@ const (
 	mastCol = 6
 
 	sideButtonWidth  = 6
-	sideButtonHeight = 4
+	sideButtonHeight = 5
 	sideButtonTopRel = antennaHeight + 1 + grilleHeight + 2
 )
 
@@ -80,6 +81,7 @@ func sideButtonLines(pressed bool, w int) []string {
 			sideButtonFaceStyle.Render("◆"),
 			sideButtonFrameStyle.Render("▟"),
 			"",
+			"",
 		}
 		if pressed {
 			lines = []string{
@@ -87,6 +89,7 @@ func sideButtonLines(pressed bool, w int) []string {
 				sideButtonFrameStyle.Render("▐"),
 				sideButtonFaceStyle.Render("◆"),
 				sideButtonFrameStyle.Render("▟"),
+				"",
 			}
 		}
 		for i := range lines {
@@ -96,16 +99,18 @@ func sideButtonLines(pressed bool, w int) []string {
 	}
 	released := []string{
 		sideButtonFrameStyle.Render("╭──╮ "),
-		sideButtonFrameStyle.Render("│") + sideButtonFaceStyle.Render("◆") + sideButtonFrameStyle.Render(" │") + sideButtonShadowStyle.Render("▏"),
+		sideButtonFrameStyle.Render("│") + sideButtonFaceHighlightStyle.Render("▔▔") + sideButtonFrameStyle.Render("│") + sideButtonShadowStyle.Render("▏"),
+		sideButtonFrameStyle.Render("│") + sideButtonFaceStyle.Render("◆ ") + sideButtonFrameStyle.Render("│") + sideButtonShadowStyle.Render("▏"),
+		sideButtonFrameStyle.Render("│") + sideButtonFaceShadowStyle.Render("▄▄") + sideButtonFrameStyle.Render("│") + sideButtonShadowStyle.Render("▏"),
 		sideButtonFrameStyle.Render("╰──╯") + sideButtonShadowStyle.Render("▔"),
-		"",
 	}
 	if pressed {
 		released = []string{
 			"",
-			sideButtonFrameStyle.Render("╭──╮ "),
-			sideButtonFrameStyle.Render("│") + sideButtonFaceStyle.Render("◆") + sideButtonFrameStyle.Render(" │"),
-			sideButtonFrameStyle.Render("╰──╯ "),
+			" " + sideButtonFrameStyle.Render("╭──╮"),
+			" " + sideButtonFrameStyle.Render("│") + sideButtonFaceStyle.Render("◆ ") + sideButtonFrameStyle.Render("│"),
+			" " + sideButtonFrameStyle.Render("│") + sideButtonFaceShadowStyle.Render("▄▄") + sideButtonFrameStyle.Render("│"),
+			" " + sideButtonFrameStyle.Render("╰──╯"),
 		}
 	}
 	for i := range released {
@@ -132,10 +137,12 @@ func padVisible(s string, w int) string {
 // that doubles as a scroll-position indicator. Width is the screen content.
 func (m Model) screenHeader() string {
 	w := m.screenW
-	return lipgloss.JoinVertical(lipgloss.Left,
-		m.statusLine(w),
-		m.scrollRule(w),
-	)
+	lines := []string{m.statusLine(w)}
+	if m.hasWorkerStatuses() {
+		lines = append(lines, m.workerStatusStrip(w))
+	}
+	lines = append(lines, m.scrollRule(w))
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 // speakerGrille renders the physical speaker/control band exactly w columns
@@ -196,7 +203,7 @@ func (m Model) statusLine(w int) string {
 	} else if strings.TrimSpace(m.messages.Value()) != "" {
 		word = "drafting"
 	}
-	left := led + statusNameStyle.Render(" io") + statusWordStyle.Render(" · ") + statusModeStyle.Render(word)
+	left := led + statusWordStyle.Render(" ") + m.statusFace() + statusNameStyle.Render(" io") + statusWordStyle.Render(" · ") + statusModeStyle.Render(word)
 
 	sep := statusWordStyle.Render("  ")
 	right := strings.Join([]string{
@@ -207,6 +214,17 @@ func (m Model) statusLine(w int) string {
 
 	middle := strings.Join(m.statusReadouts(), sep)
 	return statusLineFit(w, left, middle, right)
+}
+
+func (m Model) statusFace() string {
+	style := statusFaceStyle
+	switch m.expr {
+	case Happy:
+		style = statusHappyStyle
+	case Sleepy:
+		style = statusSleepyStyle
+	}
+	return style.Render(Face(m.expr, m.frame))
 }
 
 func (m Model) screenStatus() string {

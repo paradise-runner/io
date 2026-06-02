@@ -93,7 +93,7 @@ func TestLayout_NestsMessagesInsideScreenShell(t *testing.T) {
 	if m.messages.viewport.Width != m.screenW {
 		t.Fatalf("viewport.Width = %d, want screenW %d", m.messages.viewport.Width, m.screenW)
 	}
-	wantViewportH := m.screenH - screenBorder - screenChromeHeight - trayHeight
+	wantViewportH := m.screenH - screenBorder - m.screenChromeHeight() - trayHeight
 	if m.messages.viewport.Height != wantViewportH {
 		t.Fatalf("viewport.Height = %d, want screen height minus chrome and composer (%d)", m.messages.viewport.Height, wantViewportH)
 	}
@@ -123,6 +123,27 @@ func TestStatusLine_KeepsBatteryAndClock(t *testing.T) {
 	}
 	if !strings.Contains(line, ":") {
 		t.Fatalf("status line should include a clock: %q", line)
+	}
+}
+
+func TestStatusLine_IncludesReactiveFace(t *testing.T) {
+	cases := []struct {
+		expr Expression
+		want string
+	}{
+		{Resting, "(◕‿◕)"},
+		{Blink, "(•‿•)"},
+		{Happy, "(♥‿♥)"},
+		{Sleepy, "(˘‿˘)"},
+	}
+
+	for _, tc := range cases {
+		m := newTestModel(&stubApp{})
+		m.expr = tc.expr
+		line := m.statusLine(72)
+		if !strings.Contains(line, tc.want) {
+			t.Fatalf("status line missing face %q for expr %v: %q", tc.want, tc.expr, line)
+		}
 	}
 }
 

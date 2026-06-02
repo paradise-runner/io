@@ -26,6 +26,7 @@ func (demoApp) SaveSettings(personastate.State) error   { return nil }
 func (demoApp) ContextInfo() tui.ContextInfo {
 	return tui.ContextInfo{InputTokens: 18234, ContextWindow: 200000, CostUSD: 0.42}
 }
+func (demoApp) CompactNow() error              { return nil }
 func (demoApp) MemorySummary() (string, error) { return "# Memory Index\n\n- io project — TUI", nil }
 func (demoApp) History() []tui.HistoryEntry {
 	return []tui.HistoryEntry{

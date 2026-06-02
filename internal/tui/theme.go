@@ -98,6 +98,10 @@ var (
 	statusWordStyle   = lipgloss.NewStyle().Foreground(colorDim)
 	statusMetricStyle = lipgloss.NewStyle().Foreground(colorMint).Bold(true)
 	statusWarnStyle   = lipgloss.NewStyle().Foreground(colorPink).Bold(true)
+	statusFaceStyle   = lipgloss.NewStyle().Foreground(colorMint).Bold(true)
+	statusHappyStyle  = lipgloss.NewStyle().Foreground(colorPink).Bold(true)
+	statusSleepyStyle = lipgloss.NewStyle().Foreground(colorDim).Bold(true)
+	workerStripStyle  = lipgloss.NewStyle().Foreground(colorDim)
 	ledOnlineStyle    = lipgloss.NewStyle().Foreground(colorMint).Bold(true)
 	ledWorkingStyle   = lipgloss.NewStyle().Foreground(colorPink).Bold(true)
 	signalOnStyle     = lipgloss.NewStyle().Foreground(colorMint)
@@ -105,10 +109,11 @@ var (
 	batteryStyle      = lipgloss.NewStyle().Foreground(colorDim)
 	clockStyle        = lipgloss.NewStyle().Foreground(colorDim)
 
-	sideButtonFrameStyle  = lipgloss.NewStyle().Foreground(colorLavender).Bold(true)
-	sideButtonFaceStyle   = lipgloss.NewStyle().Foreground(colorInk).Background(colorPink).Bold(true)
-	sideButtonShadowStyle = lipgloss.NewStyle().
-				Foreground(colorInk)
+	sideButtonFrameStyle         = lipgloss.NewStyle().Foreground(colorLavender).Bold(true)
+	sideButtonFaceStyle          = lipgloss.NewStyle().Foreground(colorInk).Background(colorPink).Bold(true)
+	sideButtonFaceHighlightStyle = lipgloss.NewStyle().Foreground(colorCream).Background(colorPink).Bold(true)
+	sideButtonFaceShadowStyle    = lipgloss.NewStyle().Foreground(colorInk).Background(colorPink).Bold(true)
+	sideButtonShadowStyle        = lipgloss.NewStyle().Foreground(colorInk)
 
 	takeoverFrameStyle  = lipgloss.NewStyle().Foreground(colorPink).Bold(true)
 	takeoverTitleStyle  = lipgloss.NewStyle().Foreground(colorMint).Bold(true)

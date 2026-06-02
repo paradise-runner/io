@@ -4,16 +4,15 @@ package persona
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"github.com/edward-champion/io/internal/agentharness"
 	"github.com/edward-champion/io/internal/claudeproc"
-	"github.com/edward-champion/io/internal/codexproc"
 )
 
 // Config configures a persona Controller.
@@ -34,8 +33,13 @@ type Config struct {
 	SoulPath string
 	// MemoryDir, if non-empty, is passed to harnesses with native memory-dir support.
 	MemoryDir string
+	// MCPConfigPath, if non-empty, is passed to harnesses that support MCP config.
+	MCPConfigPath string
 	// Workdir is the process working directory (default: current dir).
 	Workdir string
+	// Runtime centralizes harness binary paths and command construction. The
+	// fields above override matching Runtime fields when set.
+	Runtime agentharness.Runtime
 }
 
 // Controller manages the selected harness persona process.
@@ -44,9 +48,12 @@ type Controller struct {
 	stdin   io.WriteCloser
 	events  chan claudeproc.Event
 	harness string
+	mode    agentharness.InteractionMode
 	cfg     Config
+	runtime agentharness.Runtime
 
 	mu         sync.RWMutex
+	writeMu    sync.Mutex
 	sessionID  string
 	lastInput  int
 	lastWindow int
@@ -59,58 +66,70 @@ type Controller struct {
 
 // New starts the persona process and begins reading its events.
 func New(cfg Config) (*Controller, error) {
-	h, ok := agentharness.NormalizeKind(cfg.Harness)
-	if !ok {
-		return nil, fmt.Errorf("unknown harness %q", cfg.Harness)
+	rt := cfg.runtime()
+	h, model, effort, err := rt.Normalize(cfg.Harness, cfg.Model, cfg.ReasoningEffort)
+	if err != nil {
+		return nil, err
 	}
+	mode, _ := agentharness.InteractionModeFor(string(h))
 	cfg.Harness = string(h)
-	cfg.Model = agentharness.NormalizeModel(cfg.Harness, cfg.Model)
-	cfg.ReasoningEffort = agentharness.NormalizeReasoningEffort(cfg.ReasoningEffort)
+	cfg.Model = model
+	cfg.ReasoningEffort = effort
 	c := &Controller{
 		events:    make(chan claudeproc.Event, 64),
 		harness:   cfg.Harness,
+		mode:      mode,
 		cfg:       cfg,
+		runtime:   rt,
 		sessionID: cfg.ResumeSessionID,
 	}
-	if h == agentharness.Codex {
+	if mode == agentharness.InteractionExecTurns {
 		return c, nil
 	}
-	if err := c.startClaude(cfg); err != nil {
+	if err := c.startPersistent(cfg); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-func (c *Controller) startClaude(cfg Config) error {
-	bin := cfg.ClaudePath
-	if bin == "" {
-		bin = "claude"
+func (cfg Config) runtime() agentharness.Runtime {
+	rt := cfg.Runtime
+	if cfg.ClaudePath != "" {
+		rt.ClaudePath = cfg.ClaudePath
 	}
-
-	args := []string{
-		"--output-format", "stream-json",
-		"--input-format", "stream-json",
-		"--verbose",
-	}
-	if cfg.ResumeSessionID != "" {
-		args = append(args, "--resume", cfg.ResumeSessionID)
-	}
-	if cfg.Model != "" {
-		args = append(args, "--model", cfg.Model)
-	}
-	if cfg.ReasoningEffort != "" {
-		args = append(args, "--effort", cfg.ReasoningEffort)
+	if cfg.CodexPath != "" {
+		rt.CodexPath = cfg.CodexPath
 	}
 	if cfg.SoulPath != "" {
-		args = append(args, "--append-system-prompt-file", cfg.SoulPath)
+		rt.SoulPath = cfg.SoulPath
 	}
 	if cfg.MemoryDir != "" {
-		args = append(args, "--settings", fmt.Sprintf(`{"autoMemoryDirectory":%q}`, cfg.MemoryDir))
+		rt.MemoryDir = cfg.MemoryDir
+	}
+	if cfg.MCPConfigPath != "" {
+		rt.MCPConfigPath = cfg.MCPConfigPath
+	}
+	if cfg.Workdir != "" {
+		rt.Workdir = cfg.Workdir
+	}
+	return rt
+}
+
+func (c *Controller) startPersistent(cfg Config) error {
+	hcmd, err := c.runtime.StreamCommand(agentharness.StreamRequest{
+		Harness:         cfg.Harness,
+		ResumeSessionID: cfg.ResumeSessionID,
+		Model:           cfg.Model,
+		ReasoningEffort: cfg.ReasoningEffort,
+		CWD:             cfg.Workdir,
+	})
+	if err != nil {
+		return err
 	}
 
-	cmd := exec.Command(bin, args...)
-	if cfg.Workdir != "" {
-		cmd.Dir = cfg.Workdir
+	cmd := exec.Command(hcmd.Bin, hcmd.Args...)
+	if hcmd.CWD != "" {
+		cmd.Dir = hcmd.CWD
 	}
 
 	stdin, err := cmd.StdinPipe()
@@ -127,11 +146,11 @@ func (c *Controller) startClaude(cfg Config) error {
 
 	c.cmd = cmd
 	c.stdin = stdin
-	go c.readLoop(stdout)
+	go c.readLoop(hcmd.Harness, stdout)
 	return nil
 }
 
-func (c *Controller) readLoop(stdout io.Reader) {
+func (c *Controller) readLoop(harness agentharness.Kind, stdout io.Reader) {
 	defer c.closeEvents()
 	sc := bufio.NewScanner(stdout)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
@@ -140,7 +159,7 @@ func (c *Controller) readLoop(stdout io.Reader) {
 		if len(line) == 0 {
 			continue
 		}
-		ev, err := claudeproc.ParseLine(line)
+		ev, err := agentharness.ParseLine(string(harness), line)
 		if err != nil {
 			continue // ignore unparseable lines in Phase 1
 		}
@@ -152,7 +171,7 @@ func (c *Controller) readLoop(stdout io.Reader) {
 	}
 }
 
-func (c *Controller) runCodexTurn(text string) {
+func (c *Controller) runTurn(text string) {
 	defer func() {
 		c.mu.Lock()
 		c.running = false
@@ -160,9 +179,22 @@ func (c *Controller) runCodexTurn(text string) {
 		c.mu.Unlock()
 	}()
 
-	cmd := exec.Command(c.codexBin(), c.codexArgs(text)...)
-	if c.cfg.Workdir != "" {
-		cmd.Dir = c.cfg.Workdir
+	hcmd, err := c.runtime.TurnCommand(agentharness.TurnRequest{
+		Harness:         c.cfg.Harness,
+		ResumeSessionID: c.SessionID(),
+		Model:           c.cfg.Model,
+		ReasoningEffort: c.cfg.ReasoningEffort,
+		Prompt:          text,
+		CWD:             c.cfg.Workdir,
+	})
+	if err != nil {
+		c.emit(claudeproc.Event{Kind: claudeproc.KindResult, IsError: true})
+		return
+	}
+
+	cmd := exec.Command(hcmd.Bin, hcmd.Args...)
+	if hcmd.CWD != "" {
+		cmd.Dir = hcmd.CWD
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -185,7 +217,7 @@ func (c *Controller) runCodexTurn(text string) {
 		if len(line) == 0 {
 			continue
 		}
-		ev, err := codexproc.ParseLine(line)
+		ev, err := agentharness.ParseLine(string(hcmd.Harness), line)
 		if err != nil || ev.Kind == claudeproc.KindUnknown {
 			continue
 		}
@@ -238,47 +270,6 @@ func (c *Controller) record(ev claudeproc.Event) {
 	}
 }
 
-func (c *Controller) codexBin() string {
-	if c.cfg.CodexPath != "" {
-		return c.cfg.CodexPath
-	}
-	return "codex"
-}
-
-func (c *Controller) codexArgs(text string) []string {
-	sessionID := c.SessionID()
-	if sessionID == "" {
-		args := []string{"exec"}
-		args = append(args, c.codexExecFlags(true)...)
-		return append(args, text)
-	}
-	args := []string{"exec", "resume"}
-	args = append(args, c.codexExecFlags(false)...)
-	args = append(args, sessionID, text)
-	return args
-}
-
-func (c *Controller) codexExecFlags(includeCD bool) []string {
-	args := []string{
-		"--json",
-		"--skip-git-repo-check",
-		"--model", c.cfg.Model,
-		"--config", "model_reasoning_effort=" + tomlString(c.cfg.ReasoningEffort),
-	}
-	if c.cfg.SoulPath != "" {
-		args = append(args, "--config", "model_instructions_file="+tomlString(c.cfg.SoulPath))
-	}
-	if includeCD && c.cfg.Workdir != "" {
-		args = append(args, "--cd", c.cfg.Workdir)
-	}
-	return args
-}
-
-func tomlString(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
-}
-
 // Events returns the channel of parsed persona events. It is closed when the
 // process exits.
 func (c *Controller) Events() <-chan claudeproc.Event { return c.events }
@@ -303,20 +294,42 @@ func (c *Controller) LastUsage() (inputTokens, contextWindow int, costUSD float6
 
 // Send writes a user turn to the persona process.
 func (c *Controller) Send(text string) error {
-	if c.harness == string(agentharness.Codex) {
+	if c.mode == agentharness.InteractionExecTurns {
 		c.mu.Lock()
 		if c.running {
 			c.mu.Unlock()
-			return errors.New("codex turn already running")
+			return fmt.Errorf("%s turn already running", c.harness)
 		}
 		c.running = true
 		c.mu.Unlock()
-		go c.runCodexTurn(text)
+		go c.runTurn(text)
 		return nil
 	}
-	line, err := claudeproc.EncodeUserTurn(text)
+	return c.sendStreamInput(text)
+}
+
+// SendCommand writes an internal command to the live persona without adding a
+// user-authored history entry. Only persistent harnesses can support this.
+func (c *Controller) SendCommand(command string) error {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return errors.New("persona command is empty")
+	}
+	if !agentharness.SupportsLiveCommands(c.harness) {
+		return fmt.Errorf("live persona command %q is unsupported for %s", command, c.harness)
+	}
+	return c.sendStreamInput(command)
+}
+
+func (c *Controller) sendStreamInput(text string) error {
+	line, err := agentharness.EncodeStreamUserTurn(c.harness, text)
 	if err != nil {
 		return err
+	}
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if c.stdin == nil {
+		return fmt.Errorf("%s persona stdin is not available", c.harness)
 	}
 	_, err = c.stdin.Write(line)
 	return err
@@ -324,7 +337,7 @@ func (c *Controller) Send(text string) error {
 
 // Close closes stdin and waits for the process to exit.
 func (c *Controller) Close() error {
-	if c.harness == string(agentharness.Codex) {
+	if c.mode == agentharness.InteractionExecTurns {
 		c.mu.RLock()
 		cmd := c.cmd
 		c.mu.RUnlock()
